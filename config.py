@@ -1,5 +1,7 @@
 import os
 
+from local_steam import get_local_account_id
+
 STEAM_LIBRARY = os.path.expanduser("~/.local/share/Steam")
 SERVER_LOG_PATH = os.path.join(
     STEAM_LIBRARY, "steamapps/common/dota 2 beta/game/dota/server_log.txt"
@@ -27,3 +29,10 @@ COLOR_RED = "#e2574c"
 
 WINDOW_MARGIN_PX = 20
 WINDOW_OPACITY = 0.85
+
+# The locally logged-in Steam account's account_id (Steam32), auto-detected
+# from Steam's own loginusers.vdf - or None if it can't be determined (e.g.
+# this dev machine, which has no real Steam login). Used by overlay_window
+# to highlight "this is you" among the rows. Detection never raises, so
+# import of this module is always safe even without Steam installed.
+MY_ACCOUNT_ID = get_local_account_id()

@@ -19,6 +19,9 @@ from assets import get_faction_icon_path, get_hero_icon_path, get_rank_icon_path
 ACCENT_PINK = QColor("#FF9CE3")
 ACCENT_BLUE = QColor("#7DD3FC")
 ACCENT_PURPLE = QColor("#B388FF")
+# "This is you" row highlight - deliberately not blue, so it never reads as
+# the same signal as the party-underline treatment below.
+ACCENT_GOLD = QColor("#FFD166")
 BASE_BG = QColor(10, 10, 16, 235)  # near-black, mostly opaque so text stays readable
 
 ICON_SIZE = 28
@@ -139,10 +142,31 @@ class _GradientPanel(QWidget):
 
 
 def _player_row(stats, hero_id, expanded, party_account_ids):
-    row = QWidget()
+    # A QFrame (not QWidget) is used here specifically because it lets the
+    # "this is you" highlight below paint a background/border from a
+    # stylesheet - plain QWidgets don't paint stylesheet backgrounds
+    # without extra plumbing.
+    row = QFrame()
+    row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
     layout = QHBoxLayout(row)
     layout.setContentsMargins(4, 3, 4, 3)
     layout.setSpacing(ICON_GAP)
+
+    is_you = config.MY_ACCOUNT_ID is not None and stats.account_id == config.MY_ACCOUNT_ID
+    if is_you:
+        # "This is you": a gold left border + faint background tint - a
+        # clearly different signal from the party-underline (blue,
+        # applied to the nickname text only) below, so the two never
+        # look like the same highlight.
+        tint = QColor(ACCENT_GOLD)
+        tint.setAlpha(30)
+        row.setStyleSheet(
+            "QFrame { "
+            f"border-left: 3px solid {ACCENT_GOLD.name()}; "
+            f"background-color: rgba({tint.red()}, {tint.green()}, {tint.blue()}, {tint.alpha()}); "
+            "border-radius: 4px; "
+            "}"
+        )
 
     if stats.hidden:
         label = QLabel(f"{stats.nickname} — профиль скрыт")
