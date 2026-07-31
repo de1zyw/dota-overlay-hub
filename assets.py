@@ -10,6 +10,16 @@ from opendota_client import _cached_get
 CACHE_DIR = os.path.join(os.path.dirname(__file__), ".assets_cache")
 HERO_ICON_BASE = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/icons"
 RANK_ICON_BASE = "https://www.opendota.com/assets/images/dota2/rank_icons"
+# Liquipedia's own asset host (not Steam/OpenDota) - hosts the actual in-game
+# faction emblems (Radiant's ancient, Dire's fiery towers) as real PNGs.
+# Found by querying Liquipedia's public MediaWiki API for the images used on
+# its "Factions" page, then verifying with `file` that the bytes are a real
+# PNG (not an HTML shell) - Steam's dota_react CDN and OpenDota's asset host
+# have no faction icons at any path tried for this.
+FACTION_ICON_URLS = {
+    "radiant": "https://liquipedia.net/commons/images/b/b6/Dota2_Radiant_icon.png",
+    "dire": "https://liquipedia.net/commons/images/2/2c/Dota2_Dire_icon.png",
+}
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -58,3 +68,11 @@ def get_rank_icon_path(rank_tier):
     tier = rank_tier // 10
     dest = os.path.join(CACHE_DIR, f"rank_icon_{tier}.png")
     return _download(f"{RANK_ICON_BASE}/rank_icon_{tier}.png", dest)
+
+
+def get_faction_icon_path(team):
+    url = FACTION_ICON_URLS.get(team)
+    if not url:
+        return None
+    dest = os.path.join(CACHE_DIR, f"faction_icon_{team}.png")
+    return _download(url, dest)

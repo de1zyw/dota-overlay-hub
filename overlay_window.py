@@ -4,10 +4,17 @@ inspired by a user-supplied reference palette, darkened/desaturated for
 readability over live gameplay) and real hero/rank icons."""
 from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
+)
 
 import config
-from assets import get_hero_icon_path, get_rank_icon_path
+from assets import get_faction_icon_path, get_hero_icon_path, get_rank_icon_path
 
 ACCENT_PINK = QColor("#FF9CE3")
 ACCENT_BLUE = QColor("#7DD3FC")
@@ -19,6 +26,7 @@ HERO_ICON_SIZE = 32
 MATCH_ICON_SIZE = 18
 MATCH_ICON_BORDER = 2
 MATCH_HISTORY_COUNT = 5
+FACTION_ICON_SIZE = 20
 
 # The one spacing value used everywhere icon-type elements sit next to each
 # other (rank icon <-> current-pick icon <-> match-history icons <-> text,
@@ -198,22 +206,48 @@ class OverlayWindow(QWidget):
             if widget:
                 widget.deleteLater()
 
-    def _section_header(self, text):
+    def _section_header(self, text, team):
+        """RADIANT/DIRE header: faction icon (real emblem if fetched, else
+        nothing - text alone still reads fine) beside the label text, tinted
+        with the same green/red convention used for win/loss elsewhere."""
+        header = QWidget()
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(0, 6, 0, 4)
+        layout.setSpacing(ICON_GAP)
+
+        icon_path = get_faction_icon_path(team)
+        if icon_path:
+            layout.addWidget(_icon_label(icon_path, FACTION_ICON_SIZE))
+
+        color = config.COLOR_GREEN if team == "radiant" else config.COLOR_RED
         label = QLabel(text)
         label.setStyleSheet(
-            "color: white; font-weight: bold; font-family: sans-serif; "
-            "font-size: 12px; letter-spacing: 2px; padding-top: 6px;"
+            f"color: {color}; font-weight: bold; font-family: sans-serif; "
+            "font-size: 12px; letter-spacing: 2px;"
         )
-        return label
+        layout.addWidget(label)
+        layout.addStretch()
+        return header
+
+    def _section_divider(self):
+        """Thin horizontal rule marking the boundary between the Radiant and
+        Dire blocks - a bit more visual separation than spacing alone."""
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFixedHeight(1)
+        line.setStyleSheet("background-color: rgba(255, 255, 255, 40); border: none;")
+        return line
 
     def render_lobby(self, radiant, dire, current_picks):
         self._clear_layout()
 
-        self._layout.addWidget(self._section_header("RADIANT"))
+        self._layout.addWidget(self._section_header("RADIANT", "radiant"))
         for stats in radiant:
             self._layout.addWidget(_player_row(stats, current_picks.get(stats.account_id), self._expanded))
 
-        self._layout.addWidget(self._section_header("DIRE"))
+        self._layout.addWidget(self._section_divider())
+
+        self._layout.addWidget(self._section_header("DIRE", "dire"))
         for stats in dire:
             self._layout.addWidget(_player_row(stats, current_picks.get(stats.account_id), self._expanded))
 
