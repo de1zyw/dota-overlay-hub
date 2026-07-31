@@ -34,8 +34,11 @@ def _download(url, dest_path):
         resp.raise_for_status()
     except requests.exceptions.RequestException:
         return None
-    with open(dest_path, "wb") as f:
-        f.write(resp.content)
+    try:
+        with open(dest_path, "wb") as f:
+            f.write(resp.content)
+    except OSError:
+        return None
     return dest_path
 
 
