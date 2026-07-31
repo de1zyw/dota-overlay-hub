@@ -47,6 +47,7 @@ class MatchState:
     roster: list
     radiant: list
     dire: list
+    party_account_ids: set
 
 
 class _MainThreadBridge(QObject):
@@ -56,7 +57,7 @@ class _MainThreadBridge(QObject):
     queues them onto the thread that owns this bridge (the main thread)
     whenever `emit()` is called from a different thread."""
 
-    new_match_ready = pyqtSignal(object, object, object)
+    new_match_ready = pyqtSignal(object, object, object, object)
     toggle_visibility_requested = pyqtSignal()
     expand_requested = pyqtSignal()
 
@@ -68,8 +69,8 @@ class _MainThreadBridge(QObject):
         self.toggle_visibility_requested.connect(self._on_toggle_visibility)
         self.expand_requested.connect(self._on_expand)
 
-    def _on_new_match_ready(self, radiant, dire, current_picks):
-        self._window.render_lobby(radiant, dire, current_picks)
+    def _on_new_match_ready(self, radiant, dire, current_picks, party_account_ids):
+        self._window.render_lobby(radiant, dire, current_picks, party_account_ids)
         self._window.show_overlay()
         self._hide_timer.start(config.AUTO_HIDE_SECONDS * 1000)
 
@@ -124,9 +125,9 @@ class OverlayApp:
         if state is None:
             return
         current_picks = match_current_picks(state.roster, self.gsi.latest_raw)
-        self.window.render_lobby(state.radiant, state.dire, current_picks)
+        self.window.render_lobby(state.radiant, state.dire, current_picks, state.party_account_ids)
 
-    def on_new_match(self, roster):
+    def on_new_match(self, roster, party_account_ids):
         account_ids = [account_id for _, _, account_id in roster]
         stats_by_id = dict(zip(account_ids, self.executor.map(fetch_player_stats, account_ids)))
 
@@ -134,12 +135,12 @@ class OverlayApp:
         dire = [stats_by_id[aid] for team, _, aid in roster if team == "dire"]
         current_picks = match_current_picks(roster, self.gsi.latest_raw)
 
-        self.match_state = MatchState(roster, radiant, dire)
+        self.match_state = MatchState(roster, radiant, dire, party_account_ids)
 
         # This method runs on the background watcher thread - do not touch
         # self.window/self.hide_timer directly here. Hand off to the main
         # thread via the bridge signal instead.
-        self.bridge.new_match_ready.emit(radiant, dire, current_picks)
+        self.bridge.new_match_ready.emit(radiant, dire, current_picks, party_account_ids)
 
     def run(self):
         self.gsi.start()

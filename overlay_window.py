@@ -138,7 +138,7 @@ class _GradientPanel(QWidget):
         super().paintEvent(event)
 
 
-def _player_row(stats, hero_id, expanded):
+def _player_row(stats, hero_id, expanded, party_account_ids):
     row = QWidget()
     layout = QHBoxLayout(row)
     layout.setContentsMargins(4, 3, 4, 3)
@@ -152,9 +152,14 @@ def _player_row(stats, hero_id, expanded):
         return row
 
     nickname_label = QLabel(stats.nickname)
-    nickname_label.setStyleSheet(
-        "color: white; font-family: sans-serif; font-size: 13px; font-weight: 600;"
-    )
+    nickname_style = "color: white; font-family: sans-serif; font-size: 13px; font-weight: 600;"
+    if stats.account_id in party_account_ids:
+        # Highlight the local client's own party members (see lobby_watcher's
+        # module docstring - this can never reveal enemy party groupings).
+        # A distinct accent color for the underline itself keeps it readable
+        # against the white nickname text rather than blending into it.
+        nickname_style += f" text-decoration: underline; text-decoration-color: {ACCENT_BLUE.name()};"
+    nickname_label.setStyleSheet(nickname_style)
     layout.addWidget(nickname_label)
 
     layout.addWidget(_icon_label(get_rank_icon_path(stats.rank_tier), ICON_SIZE))
@@ -238,18 +243,22 @@ class OverlayWindow(QWidget):
         line.setStyleSheet("background-color: rgba(255, 255, 255, 40); border: none;")
         return line
 
-    def render_lobby(self, radiant, dire, current_picks):
+    def render_lobby(self, radiant, dire, current_picks, party_account_ids):
         self._clear_layout()
 
         self._layout.addWidget(self._section_header("RADIANT", "radiant"))
         for stats in radiant:
-            self._layout.addWidget(_player_row(stats, current_picks.get(stats.account_id), self._expanded))
+            self._layout.addWidget(
+                _player_row(stats, current_picks.get(stats.account_id), self._expanded, party_account_ids)
+            )
 
         self._layout.addWidget(self._section_divider())
 
         self._layout.addWidget(self._section_header("DIRE", "dire"))
         for stats in dire:
-            self._layout.addWidget(_player_row(stats, current_picks.get(stats.account_id), self._expanded))
+            self._layout.addWidget(
+                _player_row(stats, current_picks.get(stats.account_id), self._expanded, party_account_ids)
+            )
 
         self._panel.adjustSize()
         self.adjustSize()
@@ -274,7 +283,7 @@ if __name__ == "__main__":
 
     radiant = [fetch_player_stats(111620041)]
     dire = []
-    window.render_lobby(radiant, dire, {111620041: 1})
+    window.render_lobby(radiant, dire, {111620041: 1}, {111620041})
     window.show_overlay()
 
     sys.exit(app.exec())
