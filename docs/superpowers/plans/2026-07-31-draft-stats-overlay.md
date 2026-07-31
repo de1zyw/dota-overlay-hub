@@ -1369,3 +1369,44 @@ cd /home/de1zyw/dota_overlay
 git add overlay_window.py
 git commit -m "Redesign overlay with hero/rank icons and dark gradient theme"
 ```
+
+---
+
+### Task 13: Radiant/Dire section headers — real faction icons
+
+Added after user feedback on the live redesign: separate the "RADIANT"/"DIRE" section headers visually (not just as plain bold text) and add each faction's real icon (Radiant's ancient/throne emblem, Dire's emblem) next to the header text.
+
+**No confirmed working icon URL exists yet for this** — several plausible CDN paths were tried live and all 404'd (`cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/icons/{radiant,dire}.png`, `.../badges/{radiant,dire}.png`, `opendota.com/assets/images/dota2/{radiant,dire}.png` — the last one returns HTTP 200 but is actually OpenDota's SPA HTML fallback page, not a real image, a false positive worth remembering). This task starts with research, same as Task 11 did for hero/rank icons — do not guess a URL and ship it unverified.
+
+**Files:**
+- Modify: `assets.py` — add `get_faction_icon_path(team: str) -> str | None` (`team` is `"radiant"` or `"dire"`), following the exact same cache/never-raise pattern as `get_hero_icon_path`/`get_rank_icon_path`.
+- Modify: `overlay_window.py` — `_section_header` (or equivalent) renders the icon (if found) beside the "RADIANT"/"DIRE" text, plus a bit more visual separation between the two team sections (e.g. a thin divider line or extra spacing) than currently exists.
+
+- [ ] **Step 1: Research a real, working icon URL**
+
+Try candidates with `curl -s -o /dev/null -w "%{http_code}\n" <url>` and inspect the actual downloaded bytes with `file <path>` before trusting a 200 status — OpenDota's own domain returns 200 with an HTML SPA shell for almost any path, which is a false positive (confirmed live during planning: `opendota.com/assets/images/dota2/radiant.png` → 200 but `file` shows "HTML document", not a PNG). A response only counts as real if `file` reports an actual image format (PNG/JPEG/etc.), not text/HTML.
+
+Good places to check, in rough order of promise:
+- Steam's CDN under other `dota_react` subpaths not yet tried (`.../dota_react/...` has proven reliable for heroes) — explore what subdirectories actually exist rather than guessing blind; e.g. try fetching a known-good hero icon's containing directory listing behavior, or check what asset paths the actual OpenDota/Dotabuff website loads for team logos by inspecting page source of a public match page (view-source or fetch the HTML and grep for `.png` URLs containing "radiant"/"dire"/"ancient").
+- Dotabuff's static asset CDN (check their site's own served images for team icons the same way).
+- The public GitHub repo `SteamDatabase/GameTracking-Dota2` (already referenced elsewhere in this project for `server_log.txt` context) mirrors Dota's actual game files — search it for panorama UI images related to Radiant/Dire ancients; note these may be in a compiled format (`.vtex_c`) requiring conversion, in which case this path is a dead end, not worth pursuing further than a quick check.
+
+**If no real working PNG URL is found after a reasonable effort (don't burn more than ~15-20 minutes on this):** fall back to a locally-drawn placeholder — e.g. a small colored circle/triangle glyph drawn with Qt's `QPainter` (green-tinted for Radiant, red-tinted for Dire, matching the existing win/loss color convention already used elsewhere in this file) rather than a fetched image. Document in your report which path you took and why.
+
+- [ ] **Step 2: Implement whichever path Step 1 lands on**
+
+If a real URL was found, add `get_faction_icon_path` to `assets.py` mirroring the existing functions' structure (cache to `.assets_cache/`, never raise, return `None` on any failure). If falling back to a drawn glyph, implement it directly in `overlay_window.py` as a small helper, no `assets.py` involvement needed (nothing to fetch/cache).
+
+Update the section header rendering in `overlay_window.py` to show the icon next to "RADIANT"/"DIRE", and add a bit of visual separation between the Radiant block and the Dire block (a thin horizontal rule, or extra vertical spacing — use your judgment for what looks clean given the existing dark gradient theme).
+
+- [ ] **Step 3: Manual verification**
+
+Run: `cd /home/de1zyw/dota_overlay && QT_QPA_PLATFORM=xcb python3 overlay_window.py` (or the fuller demo in `run_demo.py`), find the window via `wmctrl -l`, screenshot with `magick import -window <id> <path>.png`, and confirm both faction icons (or drawn glyphs) are visible next to their respective headers, with clear visual separation between the two sections.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd /home/de1zyw/dota_overlay
+git add assets.py overlay_window.py
+git commit -m "Add Radiant/Dire faction icons to section headers"
+```
