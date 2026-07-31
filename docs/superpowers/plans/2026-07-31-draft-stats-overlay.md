@@ -1535,3 +1535,222 @@ cd /home/de1zyw/dota_overlay
 git add config.py app.py
 git commit -m "Add live pick updates via periodic re-render from fresh GSI data"
 ```
+
+---
+
+### Task 15: Exact rank icon (tier + stars, not generic tier-only)
+
+User feedback: rank should render as the specific sub-tier (e.g. "Herald 3"), not just the generic tier medal. `assets.get_rank_icon_path` currently only ever requests `rank_icon_{tier}.png` (bare tier, no star count baked into the image). A star-specific variant was already confirmed working during Task 11's research: `rank_icon_{tier}_{stars}.png` for tier 1-7, stars 1-5 (verified live via curl - all combinations 200, real PNGs). Tier 8 (Immortal) has no meaningful "star" sub-rank (OpenDota's `rank_tier` encodes Immortal as `80`, i.e. tier=8, remainder=0 in practice) - keep using the bare `rank_icon_8.png` for tier 8, consistent with `overlay_window._format_rank`'s existing special-casing of tier 8.
+
+**Files:**
+- Modify: `assets.py` — `get_rank_icon_path`
+
+**Interfaces:**
+- No signature change: `get_rank_icon_path(rank_tier) -> str | None` stays the same; only the internal URL/cache-key construction changes.
+
+- [ ] **Step 1: Update `get_rank_icon_path`**
+
+```python
+def get_rank_icon_path(rank_tier):
+    if not rank_tier:
+        return None
+    tier = rank_tier // 10
+    stars = rank_tier % 10
+    if tier == 8:
+        filename = "rank_icon_8"
+    else:
+        filename = f"rank_icon_{tier}_{stars}" if stars else f"rank_icon_{tier}"
+    dest = os.path.join(CACHE_DIR, f"{filename}.png")
+    return _download(f"{RANK_ICON_BASE}/{filename}.png", dest)
+```
+
+(The `if stars else` fallback covers a `rank_tier` whose remainder is 0 for a non-Immortal tier - shouldn't normally happen, but degrades to the bare tier icon rather than requesting a nonexistent `..._0.png`.)
+
+- [ ] **Step 2: Manual verification**
+
+Run:
+```bash
+cd /home/de1zyw/dota_overlay
+python3 -c "
+from assets import get_rank_icon_path
+print(get_rank_icon_path(65))  # Ancient (tier 6), 5 stars
+print(get_rank_icon_path(31))  # Crusader (tier 3), 1 star
+print(get_rank_icon_path(85))  # Immortal
+"
+```
+Expected: three real file paths print, each file exists under `.assets_cache/` with non-zero size (`ls -la .assets_cache/`), and the first two are named `rank_icon_6_5.png`/`rank_icon_3_1.png` (not the old bare `rank_icon_6.png`/`rank_icon_3.png`).
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd /home/de1zyw/dota_overlay
+git add assets.py
+git commit -m "Use exact tier+star rank icon instead of generic tier icon"
+```
+
+---
+
+### Task 16: Party detection ("who's in a party with you") + a real parser bug fix
+
+**Two things bundled together because they're the same underlying code change:**
+
+1. **Real bug found in `lobby_watcher.py`**: the actual, real `server_log.txt` format (confirmed live via `github.com/creepycheese/dota2-server-log`'s real test-log file, not just its regex) is:
+   `... (Lobby <id> DOTA_GAMEMODE_X <10 roster tokens>) (Party <id> <party-member tokens>)`
+   Our current `_parse_line` scans the **entire line** for `slot:[U:1:id]` tokens with no regard for which parenthesized group they're in, then rejects the line unless it finds **exactly 10**. But the `(Party ...)` group contributes its own `slot:[U:1:id]`-shaped tokens (using its own independent 0-based numbering, unrelated to the Radiant/Dire slot scheme) on the *same line* — and a Party group is present on nearly every real line (the local client almost always has *some* party, even solitary). So the total token count on a real line is almost always **more than 10**, meaning our current parser would **silently reject essentially all real matches**. The synthetic fixture never had a Party section, which is exactly why this shipped without being caught - flagged as a real, unverified risk back in Task 4's review, now confirmed for real. This must be fixed regardless of whether party detection is wanted as a feature.
+
+2. **New feature**: since we now must parse the `(Party ...)` group correctly anyway to *exclude* it from the roster, we get its contents for free - the Party group's account IDs are **your own party** (players who queued together with the local client's own account) - this is the only party information Dota's client-side log ever exposes; it does NOT reveal other players' separate party groupings (there is no way to see whether two enemies queued together - the client genuinely isn't told that). Surface this as a UI highlight (an underline, per user request) on any player row whose account_id appears in this match's Party group.
+
+**Files:**
+- Modify: `lobby_watcher.py` — fix `_parse_line`/`parse_latest_match` to correctly scope roster-token extraction to the `(Lobby ...)` group only, and additionally extract the `(Party ...)` group's account IDs.
+- Modify: `fixtures/server_log_sample.txt` — update the synthetic fixture to match the **real** confirmed format (parenthesized `(Lobby ...)` `(Party ...)` groups), not the old flat-token layout, so this bug class can't silently regress again. Keep the synthetic-data disclaimer comment.
+- Modify: `app.py` — `on_new_match`'s callback signature changes (see below); thread the party-id set through to the render call.
+- Modify: `overlay_window.py` — `render_lobby` gains a 4th parameter for the party-id set; underline party members' nickname text.
+
+**Interfaces:**
+- `lobby_watcher.parse_latest_match(log_path) -> tuple[list[tuple[str,int,int]], set[int]]` — now returns `(roster, party_account_ids)` instead of just `roster`. This is a **breaking interface change from Task 4** - deliberate, not an oversight; update every caller in this same task.
+- `lobby_watcher.watch_for_new_match(log_path, callback, poll_interval)` — `callback` is now invoked as `callback(roster, party_account_ids)` (two args instead of one).
+- `app.py`'s `on_new_match(self, roster, party_account_ids)` — updated signature to match; stores `self.party_account_ids = party_account_ids` (same plain-attribute-swap pattern already used for `self.roster`/`self.radiant`/`self.dire`, read later by `_poll_picks` too, since re-renders must keep showing the party highlight).
+- `overlay_window.OverlayWindow.render_lobby(self, radiant, dire, current_picks, party_account_ids)` — 4 params now (was 3). `show_overlay`/`hide_overlay`/`toggle_expanded` are unaffected.
+
+- [ ] **Step 1: Fix `lobby_watcher.py`**
+
+```python
+"""Parses and watches Dota's server_log.txt for the latest match's roster
+and the local client's own party grouping.
+
+Real format (confirmed against github.com/creepycheese/dota2-server-log's
+actual test log, not just its regex):
+  ... (Lobby <id> DOTA_GAMEMODE_X <slot:[U:1:id]>x10) (Party <id> <slot:[U:1:id]>xN)
+The Party group uses its own independent slot numbering (0-based, unrelated
+to the Radiant/Dire scheme) and is present on nearly every real line - a
+naive whole-line token scan (the previous implementation) would almost
+always see more than 10 tokens and silently reject real matches. This
+version scopes roster extraction to the (Lobby ...) group specifically.
+
+The Party group only ever reveals the LOCAL CLIENT's own party (who you
+personally queued with) - Dota's client never receives other players'
+separate party groupings, so this can never be used to see whether e.g.
+two enemies are partied together.
+
+Slot order within (Lobby ...) is [0,1,2,3,4,128,129,130,131,132] - first 5
+Radiant, last 5 Dire.
+Note: fixtures/server_log_sample.txt is synthetic/hand-written test data
+matching this confirmed real format, not a captured real log."""
+import os
+import re
+import time
+
+_LOBBY_RE = re.compile(r"\(Lobby\s+\d+\s+DOTA_GAMEMODE_\S+((?:\s*\d+:\[U:1:\d+\])+)\)")
+_PARTY_RE = re.compile(r"\(Party\s+\d+((?:\s*\d+:\[U:1:\d+\])+)\)")
+_ENTRY_RE = re.compile(r"(\d+):\[U:1:(\d+)\]")
+_RADIANT_SLOTS = {0, 1, 2, 3, 4}
+
+
+def _parse_line(line):
+    lobby_match = _LOBBY_RE.search(line)
+    if not lobby_match:
+        return None, None
+
+    lobby_tokens = _ENTRY_RE.findall(lobby_match.group(1))
+    if len(lobby_tokens) != 10:
+        return None, None
+
+    roster = []
+    for slot_str, account_id_str in lobby_tokens:
+        slot = int(slot_str)
+        account_id = int(account_id_str)
+        if slot in _RADIANT_SLOTS:
+            roster.append(("radiant", slot, account_id))
+        else:
+            roster.append(("dire", slot - 128, account_id))
+
+    party_account_ids = set()
+    party_match = _PARTY_RE.search(line)
+    if party_match:
+        party_tokens = _ENTRY_RE.findall(party_match.group(1))
+        party_account_ids = {int(account_id_str) for _, account_id_str in party_tokens}
+
+    return roster, party_account_ids
+
+
+def parse_latest_match(log_path):
+    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+
+    for line in reversed(lines):
+        roster, party_account_ids = _parse_line(line)
+        if roster:
+            return roster, party_account_ids
+    return [], set()
+
+
+def watch_for_new_match(log_path, callback, poll_interval=1.0):
+    last_size = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+    while True:
+        time.sleep(poll_interval)
+        if not os.path.exists(log_path):
+            continue
+        size = os.path.getsize(log_path)
+        if size > last_size:
+            last_size = size
+            roster, party_account_ids = parse_latest_match(log_path)
+            if roster:
+                callback(roster, party_account_ids)
+        elif size < last_size:
+            last_size = size  # file truncated/rotated, resync silently
+```
+
+- [ ] **Step 2: Update the synthetic fixture to match the real, confirmed format**
+
+Replace the roster line in `fixtures/server_log_sample.txt` with the real parenthesized structure, and add a Party group so this code path is actually exercised by the existing manual tests (not just the new code path going untested):
+
+```
+# SYNTHETIC TEST DATA - hand-written to match confirmed real log format, not a captured real log
+[2026-07-20 18:02:11] Connecting to matchmaking server...
+2026/07/20 - 18:02:44: =[A:1:1234567890:12345] (Lobby 9988776655 DOTA_GAMEMODE_ALLPICK 0:[U:1:111620041] 1:[U:1:222222222] 2:[U:1:333333333] 3:[U:1:444444444] 4:[U:1:555555555] 128:[U:1:666666666] 129:[U:1:777777777] 130:[U:1:888888888] 131:[U:1:999999999] 132:[U:1:101010101]) (Party 5544332211 0:[U:1:111620041] 1:[U:1:222222222])
+[2026-07-20 18:44:09] Match ended.
+```
+(Account IDs `111620041` and `222222222` are now both in the Party group and both Radiant - this exercises the "highlight my own party" case in Step 4's verification below.)
+
+Update every place in `app.py`'s or the demo scripts' manual-verification commands (Task 9 Step 2, `run_demo.py`, this task's own Step 4 below) that appends a "new match" line by copying this task's `(Lobby ...) (Party ...)` structure instead of the old flat-token layout - the old `tail -1`/flat-token append commands from earlier tasks no longer match the real format and must be updated to the parenthesized form (e.g. by `sed`-substituting the Lobby id, same idea as before, just against the new line shape).
+
+- [ ] **Step 3: Update `app.py`**
+
+- `on_new_match(self, roster, party_account_ids)` - add the second parameter, store `self.party_account_ids = party_account_ids` alongside the existing `self.roster`/`self.radiant`/`self.dire` assignments (same plain-attribute-swap pattern, same reasoning already documented there).
+- The `watcher_thread` still just calls `watch_for_new_match(config.SERVER_LOG_PATH, self.on_new_match, config.POLL_INTERVAL_SECONDS)` unchanged - `watch_for_new_match` now calls the callback with two args, which matches `on_new_match`'s new two-arg signature automatically.
+- `self.bridge.new_match_ready.emit(radiant, dire, current_picks)` becomes `self.bridge.new_match_ready.emit(radiant, dire, current_picks, party_account_ids)` - update the `pyqtSignal` declaration in `_MainThreadBridge` to `pyqtSignal(object, object, object, object)` and `_on_new_match_ready`'s parameter list and its `self._window.render_lobby(...)` call to pass all four through.
+- `_poll_picks` also needs `party_account_ids=self.party_account_ids` passed into its `self.window.render_lobby(...)` call, defaulting `self.party_account_ids = set()` in `__init__` (alongside the existing `self.roster = None` etc.) so `_poll_picks` never crashes before the first match is detected.
+
+- [ ] **Step 4: Update `overlay_window.py`**
+
+- `render_lobby(self, radiant, dire, current_picks, party_account_ids)` - 4th parameter.
+- In whichever helper builds a player row's nickname `QLabel` (the same one Task 12 added), if `stats.account_id in party_account_ids`, add `text-decoration: underline;` to that label's stylesheet (append to its existing color/style string, don't replace it) using a distinct underline color if PyQt's stylesheet syntax allows specifying `text-decoration-color` (or fall back to the nickname's existing text color if not - use your judgment, keep it a single visually-clear underline, not multiple competing colors).
+- `show_overlay`/`hide_overlay`/`toggle_expanded` remain untouched.
+
+- [ ] **Step 5: Manual verification**
+
+Run:
+```bash
+cd /home/de1zyw/dota_overlay
+python3 -c "
+from lobby_watcher import parse_latest_match
+roster, party_ids = parse_latest_match('fixtures/server_log_sample.txt')
+print('roster:', roster)
+print('party_ids:', party_ids)
+"
+```
+Expected: `roster` prints the same 10 tuples as before (confirming the Lobby-scoped extraction still works), and `party_ids` prints `{111620041, 222222222}` (confirming Party-group extraction works and did NOT get polluted by or pollute the 10-token roster count).
+
+Then run the visual check:
+```bash
+QT_QPA_PLATFORM=xcb python3 run_demo.py
+```
+(update `run_demo.py`'s trigger-append step to use the new parenthesized format per Step 2, and confirm the append still triggers a re-render). Screenshot and confirm account 111620041's nickname (and, since it's also in the demo's radiant list if present, 222222222's row if it renders as anything other than a hidden-profile placeholder) shows visibly underlined, while other rows (not in the Party group) do not.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /home/de1zyw/dota_overlay
+git add lobby_watcher.py fixtures/server_log_sample.txt app.py overlay_window.py
+git commit -m "Fix Lobby/Party token parsing bug and add party-member highlight"
+```
