@@ -1,10 +1,29 @@
 """Wires lobby_watcher -> opendota_client (threaded) -> overlay_window,
-with GSI-based best-effort current-pick resolution and auto-hide."""
+with GSI-based best-effort current-pick resolution and auto-hide.
+
+Cross-thread note: `watch_for_new_match`'s callback runs on a background
+thread, and `pynput`'s `GlobalHotKeys` callbacks run on pynput's own listener
+thread. Qt requires QWidget/QTimer objects to only be touched from the
+thread that owns them (the Qt main/GUI thread) - touching them from another
+thread is undefined behavior that Qt silently rejects with a `qWarning`
+(no Python exception raised), as confirmed via `QObject::setParent` /
+`QObject::startTimer` cross-thread warnings during Task 9 verification.
+`_MainThreadBridge` below is a `QObject` whose signals are emitted from the
+background/pynput threads but whose slots (bound methods of this QObject)
+are automatically queued by Qt onto the thread that owns the bridge (the
+main thread, since it is constructed inside `OverlayApp.__init__`, which
+runs on the main thread) - this queuing is what performs the actual
+hand-off. It specifically relies on the slots being bound methods of a
+QObject with known thread affinity: PyQt's auto-connection only detects and
+queues across threads when the receiver is such a QObject, which is why the
+window-touching code lives in this class's own slot methods rather than in
+a plain function or a bound method of the (non-QObject) `OverlayApp`.
+"""
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
 import config
@@ -17,6 +36,40 @@ from opendota_client import fetch_player_stats
 from overlay_window import OverlayWindow
 
 
+class _MainThreadBridge(QObject):
+    """Owns the signals that hand work off from background threads (the
+    lobby watcher thread, pynput's hotkey thread) onto the Qt main thread.
+    Its slots are bound methods of this QObject, so Qt's auto-connection
+    queues them onto the thread that owns this bridge (the main thread)
+    whenever `emit()` is called from a different thread."""
+
+    new_match_ready = pyqtSignal(object, object, object, object)
+    toggle_visibility_requested = pyqtSignal()
+    expand_requested = pyqtSignal()
+
+    def __init__(self, window, hide_timer):
+        super().__init__()
+        self._window = window
+        self._hide_timer = hide_timer
+        self.new_match_ready.connect(self._on_new_match_ready)
+        self.toggle_visibility_requested.connect(self._on_toggle_visibility)
+        self.expand_requested.connect(self._on_expand)
+
+    def _on_new_match_ready(self, radiant, dire, current_picks, banned_heroes):
+        self._window.render_lobby(radiant, dire, current_picks, banned_heroes)
+        self._window.show_overlay()
+        self._hide_timer.start(config.AUTO_HIDE_SECONDS * 1000)
+
+    def _on_toggle_visibility(self):
+        if self._window.isVisible():
+            self._window.hide_overlay()
+        else:
+            self._window.show_overlay()
+
+    def _on_expand(self):
+        self._window.toggle_expanded()
+
+
 class OverlayApp:
     def __init__(self):
         self.qt_app = QApplication(sys.argv)
@@ -27,19 +80,12 @@ class OverlayApp:
         self.hide_timer.setSingleShot(True)
         self.hide_timer.timeout.connect(self.window.hide_overlay)
 
+        self.bridge = _MainThreadBridge(self.window, self.hide_timer)
+
         self.hotkeys = HotkeyListener(
-            on_toggle=self._toggle_visibility,
-            on_expand=self._expand,
+            on_toggle=self.bridge.toggle_visibility_requested.emit,
+            on_expand=self.bridge.expand_requested.emit,
         )
-
-    def _toggle_visibility(self):
-        if self.window.isVisible():
-            self.window.hide_overlay()
-        else:
-            self.window.show_overlay()
-
-    def _expand(self):
-        self.window.toggle_expanded()
 
     def on_new_match(self, roster):
         account_ids = [account_id for _, _, account_id in roster]
@@ -50,9 +96,10 @@ class OverlayApp:
         current_picks = match_current_picks(roster, self.gsi.latest_raw)
         banned_heroes = fetch_top_banned_heroes(10)
 
-        self.window.render_lobby(radiant, dire, current_picks, banned_heroes)
-        self.window.show_overlay()
-        self.hide_timer.start(config.AUTO_HIDE_SECONDS * 1000)
+        # This method runs on the background watcher thread - do not touch
+        # self.window/self.hide_timer directly here. Hand off to the main
+        # thread via the bridge signal instead.
+        self.bridge.new_match_ready.emit(radiant, dire, current_picks, banned_heroes)
 
     def run(self):
         self.gsi.start()
