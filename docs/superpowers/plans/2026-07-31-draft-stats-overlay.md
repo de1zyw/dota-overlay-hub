@@ -1410,3 +1410,128 @@ cd /home/de1zyw/dota_overlay
 git add assets.py overlay_window.py
 git commit -m "Add Radiant/Dire faction icons to section headers"
 ```
+
+---
+
+### Task 14: Live pick updates during the draft
+
+Currently `current_picks` is computed **once**, at the moment a new match is detected (`on_new_match`), from whatever `self.gsi.latest_raw` happens to be at that instant. As the draft actually progresses and Dota keeps POSTing fresh GSI updates, nothing re-checks it — a player's "?" placeholder never flips to their real hero icon once they lock in a pick, unless a brand new match is detected. This task makes picks update live while the overlay is showing, without re-fetching any OpenDota stats (those don't change mid-draft — only re-run the local slot-join against fresh GSI data).
+
+**Key design point (avoids re-introducing the cross-thread Qt bug from Task 9):** a `QTimer` started on the main thread has its `timeout` signal delivered on the thread that owns it (the main thread) automatically — this does NOT need the `_MainThreadBridge` signal/slot hand-off that `on_new_match` and the hotkey callbacks need, because those originate on *other* threads (the watcher thread, pynput's thread) and call into Qt objects directly, whereas a `QTimer`'s own timeout callback is inherently already on the correct thread. Do not route this through `_MainThreadBridge` — that would be unnecessary complexity for a non-problem.
+
+**Files:**
+- Modify: `config.py` — add `GSI_POLL_INTERVAL_SECONDS = 2.0`.
+- Modify: `app.py` — `OverlayApp` gains a `QTimer` that periodically re-renders using freshly-recomputed picks.
+
+**Interfaces:**
+- Consumes: `draft_matcher.match_current_picks` (unchanged signature), `gsi_server.GSIServer.latest_raw` (unchanged), `overlay_window.OverlayWindow.render_lobby` (unchanged signature — reused as-is, no new method needed).
+- Produces: no new public interface — this is purely internal wiring inside `OverlayApp`.
+
+- [ ] **Step 1: Add the config constant**
+
+In `config.py`, add near the other timing constants:
+```python
+GSI_POLL_INTERVAL_SECONDS = 2.0
+```
+
+- [ ] **Step 2: Store last-known roster/radiant/dire on `OverlayApp`, add the poll timer**
+
+Modify `app.py`'s `OverlayApp`:
+
+```python
+class OverlayApp:
+    def __init__(self):
+        self.qt_app = QApplication(sys.argv)
+        self.window = OverlayWindow()
+        self.gsi = GSIServer(config.GSI_HOST, config.GSI_PORT)
+        self.executor = ThreadPoolExecutor(max_workers=10)
+        self.hide_timer = QTimer()
+        self.hide_timer.setSingleShot(True)
+        self.hide_timer.timeout.connect(self.window.hide_overlay)
+
+        self.bridge = _MainThreadBridge(self.window, self.hide_timer)
+
+        self.hotkeys = HotkeyListener(
+            on_toggle=self.bridge.toggle_visibility_requested.emit,
+            on_expand=self.bridge.expand_requested.emit,
+        )
+
+        # Last-known lobby state, set by on_new_match (background thread) and
+        # read by _poll_picks (main thread). Plain attribute swaps are safe
+        # here under the GIL - no lock needed since each field is replaced
+        # wholesale (never mutated in place) and readers only ever see a
+        # fully-formed previous or current value, never a half-written one.
+        self.roster = None
+        self.radiant = []
+        self.dire = []
+
+        self.pick_timer = QTimer()
+        self.pick_timer.timeout.connect(self._poll_picks)
+
+    def _poll_picks(self):
+        # Runs on the main thread (QTimer's own timeout is always delivered
+        # on the thread that started it) - safe to touch self.window directly,
+        # no bridge hand-off needed here, unlike on_new_match/hotkey callbacks.
+        if self.roster is None:
+            return
+        current_picks = match_current_picks(self.roster, self.gsi.latest_raw)
+        self.window.render_lobby(self.radiant, self.dire, current_picks)
+
+    def on_new_match(self, roster):
+        account_ids = [account_id for _, _, account_id in roster]
+        stats_by_id = dict(zip(account_ids, self.executor.map(fetch_player_stats, account_ids)))
+
+        radiant = [stats_by_id[aid] for team, _, aid in roster if team == "radiant"]
+        dire = [stats_by_id[aid] for team, _, aid in roster if team == "dire"]
+        current_picks = match_current_picks(roster, self.gsi.latest_raw)
+
+        self.roster = roster
+        self.radiant = radiant
+        self.dire = dire
+
+        # This method runs on the background watcher thread - do not touch
+        # self.window/self.hide_timer directly here. Hand off to the main
+        # thread via the bridge signal instead.
+        self.bridge.new_match_ready.emit(radiant, dire, current_picks)
+
+    def run(self):
+        self.gsi.start()
+        self.hotkeys.start()
+        self.pick_timer.start(int(config.GSI_POLL_INTERVAL_SECONDS * 1000))
+
+        watcher_thread = threading.Thread(
+            target=watch_for_new_match,
+            args=(config.SERVER_LOG_PATH, self.on_new_match, config.POLL_INTERVAL_SECONDS),
+            daemon=True,
+        )
+        watcher_thread.start()
+
+        sys.exit(self.qt_app.exec())
+```
+
+Everything else in `app.py` (`_MainThreadBridge` and its existing slots/signals) stays exactly as-is — this task adds new state and one new timer/method to `OverlayApp`, it does not touch the existing cross-thread-safe bridge mechanism.
+
+- [ ] **Step 3: Manual verification — picks actually update live**
+
+This needs a way to change `self.gsi.latest_raw` *after* a match is already showing, to simulate the draft progressing. Use the demo runner plus a live `curl` POST to the GSI server, timed after the initial render:
+
+Terminal 1:
+```bash
+cd /home/de1zyw/dota_overlay
+QT_QPA_PLATFORM=xcb python3 run_demo.py
+```
+
+Wait for the window to show real content (~20-25s, per existing behavior). Then, in Terminal 2, POST a GSI payload that `draft_matcher._extract_picks_from_gsi` can resolve to a pick for one of the fixture's known slots (e.g. Radiant team-slot 0, account_id 111620041 in the fixture):
+```bash
+curl -s -X POST http://127.0.0.1:3500/ -H "Content-Type: application/json" \
+  -d '{"draft": {"team2": {"pick0_id": 1}}}'
+```
+Expected: within `GSI_POLL_INTERVAL_SECONDS` (2s) of that POST, the window (still showing in Terminal 1, no restart needed) updates so account 111620041's row shows hero_id 1's icon instead of the "?" placeholder — without any new OpenDota network calls happening (nothing in the terminal/logs indicates a stats re-fetch; the update is instant/local). Screenshot before and after (`wmctrl -l` + `magick import`) to show the visible change.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd /home/de1zyw/dota_overlay
+git add config.py app.py
+git commit -m "Add live pick updates via periodic re-render from fresh GSI data"
+```
