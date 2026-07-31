@@ -1,7 +1,8 @@
 """Parses and watches Dota's server_log.txt for the latest match's roster.
 Format confirmed against github.com/creepycheese/dota2-server-log's test fixture:
 repeated `<slot>:[U:1:<account_id>]` tokens on a line containing DOTA_GAMEMODE.
-Slot order [0,1,2,3,4,128,129,130,131,132] - first 5 Radiant, last 5 Dire."""
+Slot order [0,1,2,3,4,128,129,130,131,132] - first 5 Radiant, last 5 Dire.
+Note: fixtures/server_log_sample.txt is synthetic/hand-written test data, not a captured real log."""
 import os
 import re
 import time
