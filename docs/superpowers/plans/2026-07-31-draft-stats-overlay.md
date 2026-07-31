@@ -1754,3 +1754,97 @@ cd /home/de1zyw/dota_overlay
 git add lobby_watcher.py fixtures/server_log_sample.txt app.py overlay_window.py
 git commit -m "Fix Lobby/Party token parsing bug and add party-member highlight"
 ```
+
+---
+
+### Task 17: Auto-detect local Steam account + highlight "your own" row
+
+User wants their own row auto-identified (not manually configured) so it's easy to spot among 10 rows. Steam stores the locally logged-in account in a local config file — read it, don't ask the user to type in their own ID.
+
+**Confirmed format** (verified via public documentation, not guessed): `<Steam library>/config/loginusers.vdf`, Valve's KeyValues/VDF text format:
+```
+"users"
+{
+    "76561198012345678"
+    {
+        "AccountName"        "somename"
+        "PersonaName"        "SomeName"
+        "MostRecent"        "1"
+        ...
+    }
+}
+```
+The outer key under `"users"` is the account's **SteamID64**. The entry with `"MostRecent" "1"` is the currently/last-active local account — if multiple Steam accounts have ever logged in on this machine, this is how to pick the right one, not the first one found. Convert SteamID64 → Steam32 `account_id` the same way `dota_stats_bot/steam_api.py` already does: `account_id = steamid64 - 76561197960265728` (this constant is `STEAM64_BASE` there — reuse the same conversion logic, don't rederive it differently).
+
+**Files:**
+- Create: `local_steam.py` — reads `loginusers.vdf`, finds the `MostRecent` entry, returns its `account_id`.
+- Modify: `config.py` — add `MY_ACCOUNT_ID` populated from `local_steam.get_local_account_id()` at import time, with a graceful `None` fallback if detection fails (missing file, no `MostRecent` entry, parse error) — never raise on import.
+- Modify: `overlay_window.py` — highlight the row whose `stats.account_id == config.MY_ACCOUNT_ID` distinctly from the existing party-underline (blue) treatment — use your judgment for a clearly different visual (e.g. a colored left border, a background tint, bold text) so "this is you" and "this is your party" read as two different signals, not the same one.
+
+**Interfaces:**
+- `local_steam.get_local_account_id() -> int | None` — never raises; parsing errors, missing file, or no `MostRecent` entry all degrade to `None`. Uses only Python's stdlib (a hand-rolled small parser is fine for this format — it's simple nested-braces KeyValues; do not add a new PyPI dependency just for VDF parsing unless you find the stdlib approach genuinely too fragile, and say why in your report if so).
+- `config.MY_ACCOUNT_ID: int | None` — read by `overlay_window.py`.
+
+- [ ] **Step 1: Write `local_steam.py`**
+
+Parse `~/.local/share/Steam/config/loginusers.vdf` (try this path; if it doesn't exist, also try `~/.steam/steam/config/loginusers.vdf` as a fallback, since Steam installs vary). A simple approach: read the file, regex for `"(\d{17})"\s*\{([^}]*)\}` to get each account block (SteamID64 + its inner key-value text), then within the `MostRecent` account's block, confirm `"MostRecent"\s*"1"` is present. Convert the winning SteamID64 to `account_id` via subtraction from `76561197960265728`. Return `None` on any failure (file missing, no match, multiple/zero `MostRecent` entries — if genuinely ambiguous, `None` is the safe answer, don't guess).
+
+- [ ] **Step 2: Wire into `config.py`**
+
+```python
+from local_steam import get_local_account_id
+
+MY_ACCOUNT_ID = get_local_account_id()
+```
+(Import must not raise even if Steam isn't installed on this machine at all - this Fedora dev machine doesn't have a real Steam login, so `MY_ACCOUNT_ID` will legitimately be `None` here; that's expected and correct, not a bug to "fix" by faking a value.)
+
+- [ ] **Step 3: Highlight in `overlay_window.py`**
+
+Add the "this is you" visual treatment, distinct from the party underline. Since this machine has no real Steam login (`config.MY_ACCOUNT_ID` will be `None` here), you cannot visually verify this against a real detected ID on this machine — instead, verify by temporarily monkeypatching `config.MY_ACCOUNT_ID` to a known test account_id (e.g. `111620041`, matching the fixture) in a throwaway verification script (not in shipped code), confirming that row gets the distinct highlight while others don't, then screenshot.
+
+- [ ] **Step 4: Manual verification**
+
+Run:
+```bash
+cd /home/de1zyw/dota_overlay
+python3 -c "
+from local_steam import get_local_account_id
+print(get_local_account_id())
+"
+```
+Expected: prints `None` on this machine (no real Steam login here) without raising — that IS the correct, expected result on this specific dev machine. Then do the monkeypatched visual check described in Step 3 and screenshot it.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd /home/de1zyw/dota_overlay
+git add local_steam.py config.py overlay_window.py
+git commit -m "Auto-detect local Steam account and highlight own row"
+```
+
+---
+
+### Task 18: Visual polish pass — sharper/crisper overall look
+
+Open-ended design-judgment task (like Task 12) — user asked to make the whole design "sharper/crisper" without a specific spec. Look at the current rendered output yourself (run the demo, screenshot it) and make concrete improvements, not just cosmetic tweaks for their own sake. Candidate areas to examine (use judgment on which actually need it after looking at a real screenshot, don't blindly apply all of these):
+
+- **Contrast/readability**: is text easily legible against the gradient background at every point, or does it wash out anywhere? Consider whether `BASE_BG`'s alpha or the gradient glow's alpha (both in `overlay_window.py`) need adjusting.
+- **Icon crispness**: hero/rank/faction icons are fetched small (32px hero icons, etc.) and scaled with `Qt.TransformationMode.SmoothTransformation` — on some small sizes this can look soft/blurry rather than sharp. Compare `SmoothTransformation` vs `Qt.TransformationMode.FastTransformation` at the actual rendered sizes and use whichever looks genuinely sharper in a real screenshot, not by assumption.
+- **Spacing/alignment**: are rows/icons consistently aligned, or does anything look loose/uneven now that there are more elements per row (rank icon, pick icon, 5 match-history icons, nickname, winrate) than in earlier, simpler screenshots?
+- **Row/section separation**: does the existing Radiant/Dire divider (Task 13) and any per-row visual boundary read cleanly, or would a subtle per-row separator help now that rows carry more visual weight?
+
+**Files:** likely `overlay_window.py` only, possibly `config.py` if adjusting color/opacity constants there.
+
+- [ ] **Step 1: Take a baseline screenshot** of the current full-lobby rendering (reuse `run_demo.py` + the append-trigger approach + `wmctrl`/`magick import`, already proven in this project) and look at it critically before changing anything.
+
+- [ ] **Step 2: Make and justify each change** — for each visual change made, the report must say what specifically looked wrong in the baseline screenshot and why the change addresses it. Don't make changes you can't point to a concrete before/after reason for.
+
+- [ ] **Step 3: Manual verification** — a fresh full-lobby screenshot after changes, compared side-by-side (describe the diff) against the Step 1 baseline in the report.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd /home/de1zyw/dota_overlay
+git add overlay_window.py
+git commit -m "Visual polish pass: sharper icons, contrast, and spacing"
+```
