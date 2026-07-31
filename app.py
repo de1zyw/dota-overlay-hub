@@ -22,6 +22,7 @@ a plain function or a bound method of the (non-QObject) `OverlayApp`.
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
@@ -33,6 +34,19 @@ from hotkeys import HotkeyListener
 from lobby_watcher import watch_for_new_match
 from opendota_client import fetch_player_stats
 from overlay_window import OverlayWindow
+
+
+@dataclass(frozen=True)
+class MatchState:
+    """Bundles the last-known lobby state as one immutable object, so it can
+    be published with a single atomic attribute assignment (see the comment
+    on `OverlayApp.match_state` for why that matters). Add new fields here
+    (e.g. a future `party_account_ids`) rather than as separate `OverlayApp`
+    attributes, to keep the single-assignment guarantee intact."""
+
+    roster: list
+    radiant: list
+    dire: list
 
 
 class _MainThreadBridge(QObject):
@@ -87,13 +101,17 @@ class OverlayApp:
         )
 
         # Last-known lobby state, set by on_new_match (background thread) and
-        # read by _poll_picks (main thread). Plain attribute swaps are safe
-        # here under the GIL - no lock needed since each field is replaced
-        # wholesale (never mutated in place) and readers only ever see a
-        # fully-formed previous or current value, never a half-written one.
-        self.roster = None
-        self.radiant = []
-        self.dire = []
+        # read by _poll_picks (main thread). Bundled into a single MatchState
+        # object and published via one attribute assignment - that single
+        # reference assignment is atomic under the GIL, so a reader always
+        # sees either the previous fully-formed MatchState or the new one,
+        # never a mix of old/new fields. Three separate attribute
+        # assignments (roster, then radiant, then dire) would NOT be safe:
+        # the GIL can switch threads between any two bytecode instructions
+        # (not just between logical statements), so _poll_picks could
+        # observe e.g. a new roster paired with a stale radiant/dire from
+        # the previous match for one tick.
+        self.match_state = None
 
         self.pick_timer = QTimer()
         self.pick_timer.timeout.connect(self._poll_picks)
@@ -102,10 +120,11 @@ class OverlayApp:
         # Runs on the main thread (QTimer's own timeout is always delivered
         # on the thread that started it) - safe to touch self.window directly,
         # no bridge hand-off needed here, unlike on_new_match/hotkey callbacks.
-        if self.roster is None:
+        state = self.match_state
+        if state is None:
             return
-        current_picks = match_current_picks(self.roster, self.gsi.latest_raw)
-        self.window.render_lobby(self.radiant, self.dire, current_picks)
+        current_picks = match_current_picks(state.roster, self.gsi.latest_raw)
+        self.window.render_lobby(state.radiant, state.dire, current_picks)
 
     def on_new_match(self, roster):
         account_ids = [account_id for _, _, account_id in roster]
@@ -115,9 +134,7 @@ class OverlayApp:
         dire = [stats_by_id[aid] for team, _, aid in roster if team == "dire"]
         current_picks = match_current_picks(roster, self.gsi.latest_raw)
 
-        self.roster = roster
-        self.radiant = radiant
-        self.dire = dire
+        self.match_state = MatchState(roster, radiant, dire)
 
         # This method runs on the background watcher thread - do not touch
         # self.window/self.hide_timer directly here. Hand off to the main
