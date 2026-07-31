@@ -66,8 +66,13 @@ def get_rank_icon_path(rank_tier):
     if not rank_tier:
         return None
     tier = rank_tier // 10
-    dest = os.path.join(CACHE_DIR, f"rank_icon_{tier}.png")
-    return _download(f"{RANK_ICON_BASE}/rank_icon_{tier}.png", dest)
+    stars = rank_tier % 10
+    if tier == 8:
+        filename = "rank_icon_8"
+    else:
+        filename = f"rank_icon_{tier}_{stars}" if stars else f"rank_icon_{tier}"
+    dest = os.path.join(CACHE_DIR, f"{filename}.png")
+    return _download(f"{RANK_ICON_BASE}/{filename}.png", dest)
 
 
 def get_faction_icon_path(team):
