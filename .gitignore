@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 gsi_captures.jsonl
+.assets_cache/

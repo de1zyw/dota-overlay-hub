@@ -1,0 +1,57 @@
+"""Fetches and locally caches hero/rank icon images from public, no-auth-needed
+CDN URLs (Steam's static CDN for heroes, OpenDota's own asset host for ranks).
+Never raises - a failed download just means no icon for that row, not a crash."""
+import os
+
+import requests
+
+from opendota_client import _cached_get
+
+CACHE_DIR = os.path.join(os.path.dirname(__file__), ".assets_cache")
+HERO_ICON_BASE = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/icons"
+RANK_ICON_BASE = "https://www.opendota.com/assets/images/dota2/rank_icons"
+
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+_hero_internal_names = None
+
+
+def _get_hero_internal_name(hero_id):
+    global _hero_internal_names
+    if _hero_internal_names is None:
+        heroes = _cached_get("/heroes", ttl=3600 * 24) or []
+        _hero_internal_names = {
+            h["id"]: h["name"].removeprefix("npc_dota_hero_") for h in heroes
+        }
+    return _hero_internal_names.get(hero_id)
+
+
+def _download(url, dest_path):
+    if os.path.exists(dest_path):
+        return dest_path
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException:
+        return None
+    with open(dest_path, "wb") as f:
+        f.write(resp.content)
+    return dest_path
+
+
+def get_hero_icon_path(hero_id):
+    if not hero_id:
+        return None
+    name = _get_hero_internal_name(hero_id)
+    if not name:
+        return None
+    dest = os.path.join(CACHE_DIR, f"hero_icon_{hero_id}.png")
+    return _download(f"{HERO_ICON_BASE}/{name}.png", dest)
+
+
+def get_rank_icon_path(rank_tier):
+    if not rank_tier:
+        return None
+    tier = rank_tier // 10
+    dest = os.path.join(CACHE_DIR, f"rank_icon_{tier}.png")
+    return _download(f"{RANK_ICON_BASE}/rank_icon_{tier}.png", dest)
