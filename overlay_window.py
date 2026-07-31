@@ -22,7 +22,12 @@ ACCENT_PURPLE = QColor("#B388FF")
 # "This is you" row highlight - deliberately not blue, so it never reads as
 # the same signal as the party-underline treatment below.
 ACCENT_GOLD = QColor("#FFD166")
-BASE_BG = QColor(10, 10, 16, 235)  # near-black, mostly opaque so text stays readable
+# Task 18: alpha raised from 235 - per user feedback the panel read as too
+# see-through against a bright game background to read comfortably; 250/255
+# is close to solid while leaving a hint of translucency at the very edge of
+# perceptibility, still recognizable as an overlay rather than a fully
+# opaque window.
+BASE_BG = QColor(10, 10, 16, 250)  # near-black, mostly opaque so text stays readable
 
 ICON_SIZE = 28
 HERO_ICON_SIZE = 32
@@ -48,6 +53,15 @@ def _winrate_color(winrate):
     return config.COLOR_NEUTRAL
 
 
+# Task 18: A/B-compared Qt.TransformationMode.SmoothTransformation against
+# FastTransformation at the actual rendered sizes (28px rank icons from
+# 256px source, 18px match-history icons from 32px source, 20px faction
+# icons from 128px source) via real screenshots. At every one of these
+# large downscale ratios, SmoothTransformation blurred the flat-color,
+# hard-edged Dota icon art into a muddy wash, while FastTransformation
+# (nearest-neighbor) kept edges and color boundaries crisp - the opposite
+# of what "smooth" implies for photographic content, but correct for this
+# specific pixel-art-style asset style. Used everywhere icons are scaled.
 def _icon_label(path, size):
     label = QLabel()
     if path:
@@ -55,7 +69,7 @@ def _icon_label(path, size):
         if not pixmap.isNull():
             label.setPixmap(
                 pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
-                               Qt.TransformationMode.SmoothTransformation)
+                               Qt.TransformationMode.FastTransformation)
             )
     label.setFixedSize(size, size)
     return label
@@ -100,7 +114,7 @@ def _match_history_group(recent_matches):
             if not pixmap.isNull():
                 label.setPixmap(
                     pixmap.scaled(inner, inner, Qt.AspectRatioMode.KeepAspectRatio,
-                                   Qt.TransformationMode.SmoothTransformation)
+                                   Qt.TransformationMode.FastTransformation)
                 )
         label.setFixedSize(MATCH_ICON_SIZE, MATCH_ICON_SIZE)
         label.setStyleSheet(
@@ -171,6 +185,13 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
     if stats.hidden:
         label = QLabel(f"{stats.nickname} — профиль скрыт")
         label.setStyleSheet("color: #888899; font-family: sans-serif; font-size: 13px;")
+        # Fixed to the same height as the icon-bearing rows below (driven by
+        # HERO_ICON_SIZE, the tallest fixed-size widget in a normal row) so a
+        # run of hidden-profile rows doesn't collapse to a shorter row height
+        # than its neighbors - without this the list's vertical rhythm was
+        # visibly uneven, icon rows noticeably taller than hidden-profile
+        # ones sitting right next to them.
+        label.setFixedHeight(HERO_ICON_SIZE)
         layout.addWidget(label)
         layout.addStretch()
         return row

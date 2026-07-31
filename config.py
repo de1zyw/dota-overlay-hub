@@ -28,7 +28,13 @@ COLOR_NEUTRAL = "#cccccc"
 COLOR_RED = "#e2574c"
 
 WINDOW_MARGIN_PX = 20
-WINDOW_OPACITY = 0.85
+# Task 18: raised from 0.85 - user feedback was that the overlay was too
+# see-through to read comfortably over live gameplay. 0.97 keeps a sliver of
+# translucency (so it still reads as an overlay, not an opaque window
+# floating over the game) while making text/icons solid enough to read at a
+# glance. Combined with BASE_BG's higher alpha below (the two multiply:
+# this scales the whole rendered window, BASE_BG only the panel fill).
+WINDOW_OPACITY = 0.97
 
 # The locally logged-in Steam account's account_id (Steam32), auto-detected
 # from Steam's own loginusers.vdf - or None if it can't be determined (e.g.
