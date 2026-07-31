@@ -31,7 +31,6 @@ from draft_matcher import match_current_picks
 from gsi_server import GSIServer
 from hotkeys import HotkeyListener
 from lobby_watcher import watch_for_new_match
-from meta_client import fetch_top_banned_heroes
 from opendota_client import fetch_player_stats
 from overlay_window import OverlayWindow
 
@@ -43,7 +42,7 @@ class _MainThreadBridge(QObject):
     queues them onto the thread that owns this bridge (the main thread)
     whenever `emit()` is called from a different thread."""
 
-    new_match_ready = pyqtSignal(object, object, object, object)
+    new_match_ready = pyqtSignal(object, object, object)
     toggle_visibility_requested = pyqtSignal()
     expand_requested = pyqtSignal()
 
@@ -55,8 +54,8 @@ class _MainThreadBridge(QObject):
         self.toggle_visibility_requested.connect(self._on_toggle_visibility)
         self.expand_requested.connect(self._on_expand)
 
-    def _on_new_match_ready(self, radiant, dire, current_picks, banned_heroes):
-        self._window.render_lobby(radiant, dire, current_picks, banned_heroes)
+    def _on_new_match_ready(self, radiant, dire, current_picks):
+        self._window.render_lobby(radiant, dire, current_picks)
         self._window.show_overlay()
         self._hide_timer.start(config.AUTO_HIDE_SECONDS * 1000)
 
@@ -94,12 +93,11 @@ class OverlayApp:
         radiant = [stats_by_id[aid] for team, _, aid in roster if team == "radiant"]
         dire = [stats_by_id[aid] for team, _, aid in roster if team == "dire"]
         current_picks = match_current_picks(roster, self.gsi.latest_raw)
-        banned_heroes = fetch_top_banned_heroes(10)
 
         # This method runs on the background watcher thread - do not touch
         # self.window/self.hide_timer directly here. Hand off to the main
         # thread via the bridge signal instead.
-        self.bridge.new_match_ready.emit(radiant, dire, current_picks, banned_heroes)
+        self.bridge.new_match_ready.emit(radiant, dire, current_picks)
 
     def run(self):
         self.gsi.start()

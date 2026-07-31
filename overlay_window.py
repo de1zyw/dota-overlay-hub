@@ -69,7 +69,7 @@ class OverlayWindow(QWidget):
             if widget:
                 widget.deleteLater()
 
-    def render_lobby(self, radiant, dire, current_picks, banned_heroes):
+    def render_lobby(self, radiant, dire, current_picks):
         self._clear_layout()
 
         header = QLabel("RADIANT")
@@ -90,12 +90,6 @@ class OverlayWindow(QWidget):
             label.setStyleSheet(f"color: {_winrate_color(stats.winrate)};")
             self._layout.addWidget(label)
 
-        bans_header = QLabel("BEST BANS (pro scene)")
-        bans_header.setStyleSheet("color: white; font-weight: bold;")
-        self._layout.addWidget(bans_header)
-        for name, count in banned_heroes:
-            self._layout.addWidget(QLabel(f"{name}: {count}"))
-
         self.adjustSize()
 
     def show_overlay(self):
@@ -111,7 +105,6 @@ class OverlayWindow(QWidget):
 if __name__ == "__main__":
     import sys
 
-    from meta_client import fetch_top_banned_heroes
     from opendota_client import fetch_player_stats
 
     app = QApplication(sys.argv)
@@ -119,7 +112,7 @@ if __name__ == "__main__":
 
     radiant = [fetch_player_stats(111620041)]
     dire = []
-    window.render_lobby(radiant, dire, {111620041: None}, fetch_top_banned_heroes(3))
+    window.render_lobby(radiant, dire, {111620041: None})
     window.show_overlay()
 
     sys.exit(app.exec())
