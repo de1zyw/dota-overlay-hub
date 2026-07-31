@@ -6,6 +6,22 @@ from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 import config
 
+RANK_TIERS = {
+    1: "Herald", 2: "Guardian", 3: "Crusader", 4: "Archon",
+    5: "Legend", 6: "Ancient", 7: "Divine", 8: "Immortal",
+}
+
+
+def _format_rank(rank_tier):
+    if not rank_tier:
+        return "без ранга"
+    tier = rank_tier // 10
+    stars = rank_tier % 10
+    name = RANK_TIERS.get(tier, "?")
+    if tier == 8:
+        return "Immortal"
+    return f"{name} {stars}"
+
 
 def _winrate_color(winrate):
     if winrate is None:
@@ -23,7 +39,8 @@ def _player_row_text(stats, hero_id, expanded):
 
     winrate_str = f"{stats.winrate:.0f}%" if stats.winrate is not None else "н/д"
     current = f" | пик: {hero_id}" if hero_id else ""
-    base = f"{stats.nickname} | WR {winrate_str} | {stats.last10}{current}"
+    rank_str = _format_rank(stats.rank_tier)
+    base = f"{stats.nickname} ({rank_str}) | WR {winrate_str} | {stats.last10}{current}"
     if expanded:
         base += f" | игр: {stats.total_games} | топ: {stats.top_heroes} | {stats.dotabuff_url}"
     return base
