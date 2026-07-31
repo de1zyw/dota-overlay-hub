@@ -1,26 +1,30 @@
-"""Frameless, always-on-top, translucent overlay window.
-Teams stacked top-to-bottom, one row per player. Extra stats collapse
-behind `.toggle_expanded()`. No hero icon images in this pass - text + color."""
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+"""Frameless, always-on-top, translucent overlay window with a dark,
+softly gradient-accented theme (pink/blue/purple glows on near-black,
+inspired by a user-supplied reference palette, darkened/desaturated for
+readability over live gameplay) and real hero/rank icons."""
+from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPixmap
+from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 import config
+from assets import get_hero_icon_path, get_rank_icon_path
 
-RANK_TIERS = {
-    1: "Herald", 2: "Guardian", 3: "Crusader", 4: "Archon",
-    5: "Legend", 6: "Ancient", 7: "Divine", 8: "Immortal",
-}
+ACCENT_PINK = QColor("#FF9CE3")
+ACCENT_BLUE = QColor("#7DD3FC")
+ACCENT_PURPLE = QColor("#B388FF")
+BASE_BG = QColor(10, 10, 16, 235)  # near-black, mostly opaque so text stays readable
 
+ICON_SIZE = 28
+HERO_ICON_SIZE = 32
+MATCH_ICON_SIZE = 18
+MATCH_ICON_BORDER = 2
+MATCH_HISTORY_COUNT = 5
 
-def _format_rank(rank_tier):
-    if not rank_tier:
-        return "без ранга"
-    tier = rank_tier // 10
-    stars = rank_tier % 10
-    name = RANK_TIERS.get(tier, "?")
-    if tier == 8:
-        return "Immortal"
-    return f"{name} {stars}"
+# The one spacing value used everywhere icon-type elements sit next to each
+# other (rank icon <-> current-pick icon <-> match-history icons <-> text,
+# and between the match-history icons themselves) so the row reads as one
+# consistent rhythm instead of ad-hoc per-element gaps.
+ICON_GAP = 8
 
 
 def _winrate_color(winrate):
@@ -33,17 +37,135 @@ def _winrate_color(winrate):
     return config.COLOR_NEUTRAL
 
 
-def _player_row_text(stats, hero_id, expanded):
+def _icon_label(path, size):
+    label = QLabel()
+    if path:
+        pixmap = QPixmap(path)
+        if not pixmap.isNull():
+            label.setPixmap(
+                pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
+                               Qt.TransformationMode.SmoothTransformation)
+            )
+    label.setFixedSize(size, size)
+    return label
+
+
+def _hero_pick_icon(hero_id):
+    """Current-pick hero icon, or a static local '?' placeholder (no asset
+    fetch) sized to match, so the row's icon column stays aligned whether or
+    not the pick is known yet."""
+    if hero_id:
+        return _icon_label(get_hero_icon_path(hero_id), HERO_ICON_SIZE)
+
+    label = QLabel("?")
+    label.setFixedSize(HERO_ICON_SIZE, HERO_ICON_SIZE)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    label.setStyleSheet(
+        "color: #888899; font-family: sans-serif; font-weight: bold; "
+        f"font-size: {max(int(HERO_ICON_SIZE * 0.55), 10)}px; "
+        "background-color: rgba(255, 255, 255, 18); "
+        "border: 1px solid rgba(255, 255, 255, 50); border-radius: 5px;"
+    )
+    return label
+
+
+def _match_history_group(recent_matches):
+    """Small hero-icon strip for the last few matches, newest first, each
+    ringed green (win) or red (loss) - a win is always green, never the
+    background's purple accent, so the win/loss signal stays unambiguous."""
+    group = QWidget()
+    layout = QHBoxLayout(group)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(ICON_GAP)
+
+    for hero_id, won in recent_matches[:MATCH_HISTORY_COUNT]:
+        border_color = config.COLOR_GREEN if won else config.COLOR_RED
+        inner = MATCH_ICON_SIZE - 2 * MATCH_ICON_BORDER
+        label = QLabel()
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        path = get_hero_icon_path(hero_id)
+        if path:
+            pixmap = QPixmap(path)
+            if not pixmap.isNull():
+                label.setPixmap(
+                    pixmap.scaled(inner, inner, Qt.AspectRatioMode.KeepAspectRatio,
+                                   Qt.TransformationMode.SmoothTransformation)
+                )
+        label.setFixedSize(MATCH_ICON_SIZE, MATCH_ICON_SIZE)
+        label.setStyleSheet(
+            f"border: {MATCH_ICON_BORDER}px solid {border_color}; border-radius: 4px;"
+        )
+        layout.addWidget(label)
+
+    return group
+
+
+class _GradientPanel(QWidget):
+    """Paints the dark base + three soft, low-opacity accent glows behind
+    the content - a subtler, translucency-friendly take on the reference
+    palette rather than the reference's full-opacity marketing-card look."""
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect())
+
+        painter.setBrush(BASE_BG)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(rect, 14, 14)
+
+        gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        glow_pink = QColor(ACCENT_PINK)
+        glow_pink.setAlpha(40)
+        glow_blue = QColor(ACCENT_BLUE)
+        glow_blue.setAlpha(40)
+        glow_purple = QColor(ACCENT_PURPLE)
+        glow_purple.setAlpha(40)
+        gradient.setColorAt(0.0, glow_pink)
+        gradient.setColorAt(0.5, glow_purple)
+        gradient.setColorAt(1.0, glow_blue)
+        painter.setBrush(gradient)
+        painter.drawRoundedRect(rect, 14, 14)
+
+        super().paintEvent(event)
+
+
+def _player_row(stats, hero_id, expanded):
+    row = QWidget()
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(4, 3, 4, 3)
+    layout.setSpacing(ICON_GAP)
+
     if stats.hidden:
-        return f"{stats.nickname} — профиль скрыт"
+        label = QLabel(f"{stats.nickname} — профиль скрыт")
+        label.setStyleSheet("color: #888899; font-family: sans-serif; font-size: 13px;")
+        layout.addWidget(label)
+        layout.addStretch()
+        return row
+
+    nickname_label = QLabel(stats.nickname)
+    nickname_label.setStyleSheet(
+        "color: white; font-family: sans-serif; font-size: 13px; font-weight: 600;"
+    )
+    layout.addWidget(nickname_label)
+
+    layout.addWidget(_icon_label(get_rank_icon_path(stats.rank_tier), ICON_SIZE))
+    layout.addWidget(_hero_pick_icon(hero_id))
+    layout.addWidget(_match_history_group(stats.recent_matches))
 
     winrate_str = f"{stats.winrate:.0f}%" if stats.winrate is not None else "н/д"
-    current = f" | пик: {hero_id}" if hero_id else ""
-    rank_str = _format_rank(stats.rank_tier)
-    base = f"{stats.nickname} ({rank_str}) | WR {winrate_str} | {stats.last10}{current}"
+    text = f"WR {winrate_str}"
     if expanded:
-        base += f" | игр: {stats.total_games} | топ: {stats.top_heroes} | {stats.dotabuff_url}"
-    return base
+        top_heroes_icons = "".join("\U0001F538" for _ in stats.top_heroes[:3])
+        text += f"  |  игр: {stats.total_games}  |  {top_heroes_icons}"
+
+    text_label = QLabel(text)
+    text_label.setStyleSheet(
+        f"color: {_winrate_color(stats.winrate)}; font-family: sans-serif; font-size: 13px;"
+    )
+    layout.addWidget(text_label)
+    layout.addStretch()
+    return row
 
 
 class OverlayWindow(QWidget):
@@ -58,8 +180,15 @@ class OverlayWindow(QWidget):
         self.setWindowOpacity(config.WINDOW_OPACITY)
 
         self._expanded = False
-        self._layout = QVBoxLayout(self)
-        self.setLayout(self._layout)
+        self._panel = _GradientPanel()
+        self._layout = QVBoxLayout(self._panel)
+        self._layout.setContentsMargins(14, 12, 14, 12)
+        self._layout.setSpacing(4)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self._panel)
+
         self.move(config.WINDOW_MARGIN_PX, config.WINDOW_MARGIN_PX)
 
     def _clear_layout(self):
@@ -69,27 +198,26 @@ class OverlayWindow(QWidget):
             if widget:
                 widget.deleteLater()
 
+    def _section_header(self, text):
+        label = QLabel(text)
+        label.setStyleSheet(
+            "color: white; font-weight: bold; font-family: sans-serif; "
+            "font-size: 12px; letter-spacing: 2px; padding-top: 6px;"
+        )
+        return label
+
     def render_lobby(self, radiant, dire, current_picks):
         self._clear_layout()
 
-        header = QLabel("RADIANT")
-        header.setStyleSheet("color: white; font-weight: bold;")
-        self._layout.addWidget(header)
+        self._layout.addWidget(self._section_header("RADIANT"))
         for stats in radiant:
-            hero_id = current_picks.get(stats.account_id)
-            label = QLabel(_player_row_text(stats, hero_id, self._expanded))
-            label.setStyleSheet(f"color: {_winrate_color(stats.winrate)};")
-            self._layout.addWidget(label)
+            self._layout.addWidget(_player_row(stats, current_picks.get(stats.account_id), self._expanded))
 
-        header = QLabel("DIRE")
-        header.setStyleSheet("color: white; font-weight: bold;")
-        self._layout.addWidget(header)
+        self._layout.addWidget(self._section_header("DIRE"))
         for stats in dire:
-            hero_id = current_picks.get(stats.account_id)
-            label = QLabel(_player_row_text(stats, hero_id, self._expanded))
-            label.setStyleSheet(f"color: {_winrate_color(stats.winrate)};")
-            self._layout.addWidget(label)
+            self._layout.addWidget(_player_row(stats, current_picks.get(stats.account_id), self._expanded))
 
+        self._panel.adjustSize()
         self.adjustSize()
 
     def show_overlay(self):
@@ -112,7 +240,7 @@ if __name__ == "__main__":
 
     radiant = [fetch_player_stats(111620041)]
     dire = []
-    window.render_lobby(radiant, dire, {111620041: None})
+    window.render_lobby(radiant, dire, {111620041: 1})
     window.show_overlay()
 
     sys.exit(app.exec())

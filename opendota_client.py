@@ -74,7 +74,7 @@ class PlayerStats:
     rank_tier: int = None
     total_games: int = 0
     winrate: float = None
-    last10: str = ""
+    recent_matches: list = field(default_factory=list)  # [(hero_id, won: bool), ...], newest first, max 5
     top_heroes: list = field(default_factory=list)
     dotabuff_url: str = ""
 
@@ -104,10 +104,10 @@ def fetch_player_stats(account_id):
         recent = _cached_get(f"/players/{account_id}/recentMatches", ttl=20) or []
     except OpenDotaError:
         recent = []
-    last10 = "".join(
-        "W" if m.get("radiant_win") == (m.get("player_slot", 0) < 128) else "L"
-        for m in recent[:10]
-    )
+    recent_matches = [
+        (m.get("hero_id"), m.get("radiant_win") == (m.get("player_slot", 0) < 128))
+        for m in recent[:5]
+    ]
 
     try:
         heroes = _cached_get(f"/players/{account_id}/heroes", ttl=60) or []
@@ -118,5 +118,5 @@ def fetch_player_stats(account_id):
     return PlayerStats(
         account_id=account_id, nickname=nickname, hidden=hidden,
         rank_tier=profile.get("rank_tier"), total_games=total_games, winrate=winrate,
-        last10=last10, top_heroes=top_heroes, dotabuff_url=dotabuff_url,
+        recent_matches=recent_matches, top_heroes=top_heroes, dotabuff_url=dotabuff_url,
     )
