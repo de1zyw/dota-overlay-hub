@@ -1050,3 +1050,322 @@ cd /home/de1zyw/dota_overlay
 git add gamestate_integration_dota_overlay.cfg
 git commit -m "Add GSI config file for live calibration"
 ```
+
+---
+
+## Phase 2: Visual polish (icons + dark gradient theme)
+
+Added after the app was working end-to-end and user-tested. Goal: replace the plain text-only rows with real hero/rank icons and a nicer dark, translucent, softly-gradient-accented look — inspired by a user-supplied reference palette (dark background, soft blurred color glows in pink/blue/purple), adapted for a small always-on-top overlay (darker/more transparent than the reference, which was a full-opacity marketing card).
+
+**Confirmed working, no-auth-needed image sources (verified live via curl):**
+- Hero icons: `https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/icons/<name>.png` (32x32, direct 200, no redirect) — `<name>` is OpenDota's `/heroes` endpoint's `name` field with the `npc_dota_hero_` prefix stripped (e.g. `npc_dota_hero_antimage` → `antimage`).
+- Hero full portraits: `https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/<name>.png` (256x144, needs redirect-follow — `requests` follows redirects by default, no special handling needed).
+- Rank icons: `https://www.opendota.com/assets/images/dota2/rank_icons/rank_icon_<tier>_<stars>.png` for tier 1-7 with stars 1-5, and `rank_icon_<tier>.png` (no stars suffix) works for all tiers including 8 (Immortal, which has no meaningful star count) — verified all combinations return 200.
+
+**Palette (from user-supplied reference, darkened/desaturated for an overlay context, not a full-opacity marketing card):** pink `#FF9CE3`, blue `#7DD3FC`, purple `#B388FF`, on a near-black translucent base — used as soft, low-opacity accent glows/borders, not solid fills (the overlay must stay readable over gameplay).
+
+### Task 11: Asset fetch/cache module
+
+**Files:**
+- Create: `assets.py`
+- Create: `.assets_cache/` (git-ignored — add `.assets_cache/` to `.gitignore`)
+
+**Interfaces:**
+- Consumes: nothing beyond `requests` (already a dependency) and stdlib `os`/`hashlib`.
+- Produces: `get_hero_icon_path(hero_id: int) -> str | None`, `get_rank_icon_path(rank_tier: int | None) -> str | None` — both return a local filesystem path to a cached PNG (downloading + caching to `.assets_cache/` on first call for that id/tier), or `None` if the download fails (never raise — icon-less rendering must still work). `overlay_window.py` (Task 12) calls these and loads the returned path into a `QPixmap`.
+
+- [ ] **Step 1: Write `assets.py`**
+
+```python
+"""Fetches and locally caches hero/rank icon images from public, no-auth-needed
+CDN URLs (Steam's static CDN for heroes, OpenDota's own asset host for ranks).
+Never raises - a failed download just means no icon for that row, not a crash."""
+import os
+
+import requests
+
+from opendota_client import _cached_get
+
+CACHE_DIR = os.path.join(os.path.dirname(__file__), ".assets_cache")
+HERO_ICON_BASE = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/icons"
+RANK_ICON_BASE = "https://www.opendota.com/assets/images/dota2/rank_icons"
+
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+_hero_internal_names = None
+
+
+def _get_hero_internal_name(hero_id):
+    global _hero_internal_names
+    if _hero_internal_names is None:
+        heroes = _cached_get("/heroes", ttl=3600 * 24) or []
+        _hero_internal_names = {
+            h["id"]: h["name"].removeprefix("npc_dota_hero_") for h in heroes
+        }
+    return _hero_internal_names.get(hero_id)
+
+
+def _download(url, dest_path):
+    if os.path.exists(dest_path):
+        return dest_path
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException:
+        return None
+    with open(dest_path, "wb") as f:
+        f.write(resp.content)
+    return dest_path
+
+
+def get_hero_icon_path(hero_id):
+    if not hero_id:
+        return None
+    name = _get_hero_internal_name(hero_id)
+    if not name:
+        return None
+    dest = os.path.join(CACHE_DIR, f"hero_icon_{hero_id}.png")
+    return _download(f"{HERO_ICON_BASE}/{name}.png", dest)
+
+
+def get_rank_icon_path(rank_tier):
+    if not rank_tier:
+        return None
+    tier = rank_tier // 10
+    dest = os.path.join(CACHE_DIR, f"rank_icon_{tier}.png")
+    return _download(f"{RANK_ICON_BASE}/rank_icon_{tier}.png", dest)
+```
+
+- [ ] **Step 2: Add cache dir to .gitignore**
+
+Add a line `.assets_cache/` to `/home/de1zyw/dota_overlay/.gitignore`.
+
+- [ ] **Step 3: Manual verification**
+
+Run:
+```bash
+cd /home/de1zyw/dota_overlay
+python3 -c "
+from assets import get_hero_icon_path, get_rank_icon_path
+print(get_hero_icon_path(1))
+print(get_rank_icon_path(85))
+print(get_rank_icon_path(None))
+"
+```
+Expected: first two lines print real file paths under `.assets_cache/` (e.g. `.../assets_cache/hero_icon_1.png`, `.../assets_cache/rank_icon_8.png`), and both files actually exist on disk with non-zero size (check with `ls -la .assets_cache/`). Third line prints `None` (no crash on missing rank_tier).
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd /home/de1zyw/dota_overlay
+git add assets.py .gitignore
+git commit -m "Add hero/rank icon fetch-and-cache module"
+```
+
+---
+
+### Task 12: Visual redesign — icons + dark gradient theme
+
+**Files:**
+- Modify: `overlay_window.py` (full rewrite of the rendering internals; `render_lobby`/`show_overlay`/`hide_overlay`/`toggle_expanded` method names and signatures must NOT change — `app.py` calls them as-is)
+
+**Interfaces:**
+- Consumes: `assets.get_hero_icon_path`, `assets.get_rank_icon_path` (Task 11); `opendota_client.PlayerStats` fields (unchanged); `draft_matcher`'s `dict[int, int|None]` current-picks map (unchanged).
+- Produces: same public interface as before (`OverlayWindow.render_lobby(radiant, dire, current_picks)`, `.show_overlay()`, `.hide_overlay()`, `.toggle_expanded()`) — Task 9's `app.py` and Task 8's hotkey wiring must keep working unmodified.
+
+- [ ] **Step 1: Rewrite `overlay_window.py`**
+
+```python
+"""Frameless, always-on-top, translucent overlay window with a dark,
+softly gradient-accented theme (pink/blue/purple glows on near-black,
+inspired by a user-supplied reference palette, darkened/desaturated for
+readability over live gameplay) and real hero/rank icons."""
+from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPixmap
+from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+
+import config
+from assets import get_hero_icon_path, get_rank_icon_path
+
+ACCENT_PINK = QColor("#FF9CE3")
+ACCENT_BLUE = QColor("#7DD3FC")
+ACCENT_PURPLE = QColor("#B388FF")
+BASE_BG = QColor(10, 10, 16, 235)  # near-black, mostly opaque so text stays readable
+
+ICON_SIZE = 24
+HERO_ICON_SIZE = 20
+
+
+def _winrate_color(winrate):
+    if winrate is None:
+        return config.COLOR_NEUTRAL
+    if winrate >= config.WINRATE_GREEN:
+        return config.COLOR_GREEN
+    if winrate <= config.WINRATE_RED:
+        return config.COLOR_RED
+    return config.COLOR_NEUTRAL
+
+
+def _icon_label(path, size):
+    label = QLabel()
+    if path:
+        pixmap = QPixmap(path)
+        if not pixmap.isNull():
+            label.setPixmap(
+                pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
+                               Qt.TransformationMode.SmoothTransformation)
+            )
+    label.setFixedSize(size, size)
+    return label
+
+
+class _GradientPanel(QWidget):
+    """Paints the dark base + three soft, low-opacity accent glows behind
+    the content - a subtler, translucency-friendly take on the reference
+    palette rather than the reference's full-opacity marketing-card look."""
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect())
+
+        painter.setBrush(BASE_BG)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(rect, 14, 14)
+
+        gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        glow_pink = QColor(ACCENT_PINK)
+        glow_pink.setAlpha(35)
+        glow_blue = QColor(ACCENT_BLUE)
+        glow_blue.setAlpha(35)
+        glow_purple = QColor(ACCENT_PURPLE)
+        glow_purple.setAlpha(35)
+        gradient.setColorAt(0.0, glow_pink)
+        gradient.setColorAt(0.5, glow_purple)
+        gradient.setColorAt(1.0, glow_blue)
+        painter.setBrush(gradient)
+        painter.drawRoundedRect(rect, 14, 14)
+
+        super().paintEvent(event)
+
+
+def _player_row(stats, hero_id, expanded):
+    row = QWidget()
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(4, 2, 4, 2)
+    layout.setSpacing(6)
+
+    if stats.hidden:
+        label = QLabel(f"{stats.nickname} — профиль скрыт")
+        label.setStyleSheet("color: #888899;")
+        layout.addWidget(label)
+        return row
+
+    layout.addWidget(_icon_label(get_rank_icon_path(stats.rank_tier), ICON_SIZE))
+
+    if hero_id:
+        layout.addWidget(_icon_label(get_hero_icon_path(hero_id), HERO_ICON_SIZE))
+
+    winrate_str = f"{stats.winrate:.0f}%" if stats.winrate is not None else "н/д"
+    text = f"{stats.nickname} | WR {winrate_str} | {stats.last10}"
+    if expanded:
+        top_heroes_icons = "".join("🔸" for _ in stats.top_heroes[:3])
+        text += f" | игр: {stats.total_games} | {top_heroes_icons} | {stats.dotabuff_url}"
+
+    text_label = QLabel(text)
+    text_label.setStyleSheet(f"color: {_winrate_color(stats.winrate)}; font-family: sans-serif;")
+    layout.addWidget(text_label)
+    layout.addStretch()
+    return row
+
+
+class OverlayWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowOpacity(config.WINDOW_OPACITY)
+
+        self._expanded = False
+        self._panel = _GradientPanel()
+        self._layout = QVBoxLayout(self._panel)
+        self._layout.setContentsMargins(12, 10, 12, 10)
+        self._layout.setSpacing(4)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self._panel)
+
+        self.move(config.WINDOW_MARGIN_PX, config.WINDOW_MARGIN_PX)
+
+    def _clear_layout(self):
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+    def _section_header(self, text):
+        label = QLabel(text)
+        label.setStyleSheet(
+            "color: white; font-weight: bold; font-family: sans-serif; "
+            "letter-spacing: 1px; padding-top: 4px;"
+        )
+        return label
+
+    def render_lobby(self, radiant, dire, current_picks):
+        self._clear_layout()
+
+        self._layout.addWidget(self._section_header("RADIANT"))
+        for stats in radiant:
+            self._layout.addWidget(_player_row(stats, current_picks.get(stats.account_id), self._expanded))
+
+        self._layout.addWidget(self._section_header("DIRE"))
+        for stats in dire:
+            self._layout.addWidget(_player_row(stats, current_picks.get(stats.account_id), self._expanded))
+
+        self._panel.adjustSize()
+        self.adjustSize()
+
+    def show_overlay(self):
+        self.show()
+
+    def hide_overlay(self):
+        self.hide()
+
+    def toggle_expanded(self):
+        self._expanded = not self._expanded
+
+
+if __name__ == "__main__":
+    import sys
+
+    from opendota_client import fetch_player_stats
+
+    app = QApplication(sys.argv)
+    window = OverlayWindow()
+
+    radiant = [fetch_player_stats(111620041)]
+    dire = []
+    window.render_lobby(radiant, dire, {111620041: 1})
+    window.show_overlay()
+
+    sys.exit(app.exec())
+```
+
+- [ ] **Step 2: Manual verification**
+
+Run: `cd /home/de1zyw/dota_overlay && QT_QPA_PLATFORM=xcb python3 overlay_window.py`
+Expected: a rounded, dark, translucent window appears with a subtle pink→purple→blue diagonal glow behind the content, showing a RADIANT row with a rank icon, a hero icon (hardcoded hero_id=1/Anti-Mage in the demo), and colored winrate text for account 111620041, plus an empty DIRE section. Take a screenshot if possible (`magick import -window <id> /tmp/demo.png` after finding the window id via `wmctrl -l`, same approach used earlier in this project) and confirm the icons and gradient are visible, not just placeholder boxes.
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd /home/de1zyw/dota_overlay
+git add overlay_window.py
+git commit -m "Redesign overlay with hero/rank icons and dark gradient theme"
+```
