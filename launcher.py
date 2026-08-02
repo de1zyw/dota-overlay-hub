@@ -441,6 +441,10 @@ class LauncherWindow(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    # Ties this running process to dota-overlay-hub.desktop by name, so the
+    # taskbar/dock can look up that entry's Icon= instead of falling back to
+    # a generic icon when it can't otherwise correlate the window to it.
+    app.setDesktopFileName("dota-overlay-hub")
     app.setWindowIcon(QIcon(os.path.join(PROJECT_DIR, "icon.png")))
     window = LauncherWindow()
     window.show()
