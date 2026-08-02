@@ -1,8 +1,10 @@
-"""Dedicated on-demand window showing the local user's own OpenDota stats
-in more detail than a draft row - bigger overall numbers, 10 recent
-matches instead of 5 (two rows of 5). Toggled by a hotkey, independent of
-match state. Reuses overlay_window.py's private helpers for the same
-dark-gradient visual style rather than duplicating that rendering code."""
+"""Dedicated on-demand window showing a player's OpenDota stats - used for
+both the local user's own stats (self-stats hotkey) and any profile
+looked up via OCR. Content is generic; only the caller decides whose
+account_id to fetch. Bigger overall numbers than a draft row, 10 recent
+matches instead of 5 (two rows of 5). Reuses overlay_window.py's private
+helpers for the same dark-gradient visual style rather than duplicating
+that rendering code."""
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
@@ -13,7 +15,7 @@ from overlay_window import _GradientPanel, _icon_label, _match_history_group, _w
 RANK_ICON_SIZE = 48
 
 
-class SelfStatsWindow(QWidget):
+class PlayerStatsWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowFlags(
@@ -42,11 +44,11 @@ class SelfStatsWindow(QWidget):
             if widget:
                 widget.deleteLater()
 
-    def render_stats(self, stats):
+    def render_stats(self, stats, empty_message="Steam-аккаунт не определён — стата недоступна"):
         self._clear_layout()
 
         if stats is None:
-            msg = QLabel("Steam-аккаунт не определён — стата недоступна")
+            msg = QLabel(empty_message)
             msg.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 13px;")
             self._layout.addWidget(msg)
             self._panel.adjustSize()
