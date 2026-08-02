@@ -6,6 +6,7 @@ import subprocess
 import sys
 from datetime import datetime
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
@@ -30,6 +31,55 @@ _STATUS_COLOR = {
     STATUS_WARN: "#e8b339",
     STATUS_ERROR: config.COLOR_RED,
 }
+
+# Same pink/purple/blue gradient recipe as _GradientPanel's own glow, so the
+# primary action reads as part of the app's own visual language instead of a
+# default system button. Secondary actions stay a subdued translucent panel.
+SECONDARY_BUTTON_STYLE = """
+QPushButton {
+    background-color: rgba(255, 255, 255, 15);
+    color: #dddddd;
+    border: 1px solid rgba(255, 255, 255, 30);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-family: sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+}
+QPushButton:hover {
+    background-color: rgba(255, 255, 255, 25);
+    border: 1px solid rgba(255, 255, 255, 50);
+}
+QPushButton:pressed {
+    background-color: rgba(255, 255, 255, 8);
+}
+"""
+
+PRIMARY_BUTTON_STYLE = """
+QPushButton {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #FF9CE3, stop:0.5 #B388FF, stop:1 #7DD3FC);
+    color: #14141a;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-family: sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+}
+QPushButton:hover {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #ffb3ea, stop:0.5 #c39dff, stop:1 #93ddff);
+}
+QPushButton:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #e080c9, stop:0.5 #9868e0, stop:1 #5cb8e0);
+}
+QPushButton:disabled {
+    background-color: rgba(255, 255, 255, 12);
+    color: #666666;
+}
+"""
 
 
 def _status_dot(status):
@@ -129,8 +179,12 @@ class _OverlayCard(QWidget):
 
         buttons = QHBoxLayout()
         recheck_btn = QPushButton("Перепроверить")
+        recheck_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        recheck_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         recheck_btn.clicked.connect(self.run_checks)
         self._launch_btn = QPushButton("Запустить")
+        self._launch_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._launch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._launch_btn.clicked.connect(self._on_launch)
         buttons.addWidget(recheck_btn)
         buttons.addWidget(self._launch_btn)
@@ -212,8 +266,12 @@ class _LogsPage(QWidget):
 
         buttons = QHBoxLayout()
         open_folder_btn = QPushButton("Открыть папку с логами")
+        open_folder_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         open_folder_btn.clicked.connect(self._open_folder)
         copy_path_btn = QPushButton("Скопировать путь")
+        copy_path_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        copy_path_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         copy_path_btn.clicked.connect(self._copy_path)
         buttons.addWidget(open_folder_btn)
         buttons.addWidget(copy_path_btn)
