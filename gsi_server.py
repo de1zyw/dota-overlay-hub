@@ -50,7 +50,18 @@ class GSIServer:
         event_log.log("GSI_PAYLOAD", data=data)
 
     def start(self):
-        self._httpd = HTTPServer((self.host, self.port), _Handler)
+        # Guarded: HTTPServer's bind raises OSError if the port is already
+        # taken (e.g. a stray instance from an earlier crashed run still
+        # holding it). Since the hub and overlay now share one process,
+        # letting this propagate would take down the whole tray-resident
+        # app instead of just this feature - log and continue with no GSI
+        # server instead, matching this codebase's "auxiliary failure is
+        # silent" convention.
+        try:
+            self._httpd = HTTPServer((self.host, self.port), _Handler)
+        except OSError as e:
+            event_log.log("ERROR", where="gsi_server_start", exc_type=type(e).__name__, message=str(e))
+            return
         self._httpd.gsi_server = self
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()

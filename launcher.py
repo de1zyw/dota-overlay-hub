@@ -291,16 +291,26 @@ class _ComingSoonCard(QWidget):
         layout.addWidget(desc)
 
 
+def _card_divider():
+    line = QFrame()
+    line.setFrameShape(QFrame.Shape.HLine)
+    line.setFixedHeight(1)
+    line.setStyleSheet("background-color: rgba(255, 255, 255, 20); border: none;")
+    return line
+
+
 class _OverlaysPage(QWidget):
     def __init__(self, on_launch):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        for entry in OVERLAY_ENTRIES:
-            layout.addWidget(_OverlayCard(entry, on_launch))
-        for entry in COMING_SOON_ENTRIES:
-            layout.addWidget(_ComingSoonCard(entry))
+        all_entries = [(entry, _OverlayCard) for entry in OVERLAY_ENTRIES] + \
+            [(entry, _ComingSoonCard) for entry in COMING_SOON_ENTRIES]
+        for i, (entry, card_cls) in enumerate(all_entries):
+            if i > 0:
+                layout.addWidget(_card_divider())
+            layout.addWidget(card_cls(entry, on_launch) if card_cls is _OverlayCard else card_cls(entry))
         layout.addStretch()
 
 
@@ -590,8 +600,18 @@ class LauncherWindow(QWidget):
     def start_overlay_and_hide(self):
         if self._overlay_app is None:
             from app import OverlayApp
-            self._overlay_app = OverlayApp()
-            self._overlay_app.start_services()
+            try:
+                self._overlay_app = OverlayApp()
+                self._overlay_app.start_services()
+            except Exception:
+                # This now runs inside the hub's own tray-resident process -
+                # an unhandled exception here would take down the whole
+                # process (hub + tray icon), not just a throwaway subprocess
+                # like before the single-process merge. Keep the hub alive
+                # and visible so the user can see something went wrong
+                # instead of the app just vanishing.
+                self._overlay_app = None
+                return
         self.hide()
 
     def closeEvent(self, event):

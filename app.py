@@ -123,6 +123,12 @@ class _MainThreadBridge(QObject):
 
     def _on_calibrate_requested(self):
         event_log.log("HOTKEY", action="calibrate")
+        if self._active_calibrator is not None:
+            # Already calibrating - a second press here would orphan the
+            # first fullscreen overlay (its Python reference gets overwritten
+            # below, but the still-visible window would linger disconnected
+            # from anything that could close it).
+            return
         self._active_calibrator = RegionCalibrator(on_done=self._on_calibration_done)
 
     def _on_calibration_done(self, region):
@@ -139,7 +145,9 @@ class _MainThreadBridge(QObject):
             return
         if len(candidates) == 1:
             self._show_profile(candidates[0]["account_id"])
-        else:
+        elif self._active_picker is None:
+            # Same reasoning as _on_calibrate_requested above - don't orphan
+            # an already-open picker window by overwriting its reference.
             self._active_picker = CandidatePickerWindow(on_selected=self._on_candidate_selected)
             self._active_picker.show_candidates(candidates)
 
