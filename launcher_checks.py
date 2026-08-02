@@ -3,6 +3,7 @@ so they can be run/verified directly from a plain interpreter. Report-only:
 each check just returns a severity + message, never modifies anything."""
 import importlib.util
 import os
+import shutil
 
 import config
 
@@ -50,6 +51,19 @@ def check_steam_account_self_stats():
     return STATUS_WARN, "Steam-аккаунт не определён — личная стата недоступна"
 
 
+def check_tesseract():
+    if shutil.which("tesseract"):
+        return STATUS_OK, "tesseract установлен"
+    return STATUS_ERROR, "tesseract не найден — установи: sudo pacman -S tesseract tesseract-data-rus (Arch/CachyOS)"
+
+
+def check_region_calibrated():
+    import profile_lookup_settings
+    if profile_lookup_settings.load() is not None:
+        return STATUS_OK, "Область экрана откалибрована"
+    return STATUS_WARN, f"Область экрана не откалибрована — открой профиль в Доте и нажми {config.HOTKEY_CALIBRATE}"
+
+
 CHECKS = [
     ("Python-зависимости", check_dependencies),
     ("Steam/Dota 2 на диске", check_dota_found),
@@ -64,4 +78,10 @@ CHECKS = [
 SELF_STATS_CHECKS = [
     ("Python-зависимости", check_dependencies),
     ("Steam-аккаунт", check_steam_account_self_stats),
+]
+
+PROFILE_LOOKUP_CHECKS = [
+    ("Python-зависимости", check_dependencies),
+    ("tesseract", check_tesseract),
+    ("Область экрана", check_region_calibrated),
 ]
