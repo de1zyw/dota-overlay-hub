@@ -37,6 +37,7 @@ from hotkeys import HotkeyListener
 from lobby_watcher import watch_for_new_match
 from opendota_client import fetch_player_stats
 from overlay_window import OverlayWindow
+from self_stats_window import SelfStatsWindow
 
 
 @dataclass(frozen=True)
@@ -63,14 +64,17 @@ class _MainThreadBridge(QObject):
     new_match_ready = pyqtSignal(object, object, object, object)
     toggle_visibility_requested = pyqtSignal()
     expand_requested = pyqtSignal()
+    self_stats_ready = pyqtSignal(object)
 
-    def __init__(self, window, hide_timer):
+    def __init__(self, window, hide_timer, self_stats_window):
         super().__init__()
         self._window = window
         self._hide_timer = hide_timer
+        self._self_stats_window = self_stats_window
         self.new_match_ready.connect(self._on_new_match_ready)
         self.toggle_visibility_requested.connect(self._on_toggle_visibility)
         self.expand_requested.connect(self._on_expand)
+        self.self_stats_ready.connect(self._on_self_stats_ready)
 
     def _on_new_match_ready(self, radiant, dire, current_picks, party_account_ids):
         self._window.render_lobby(radiant, dire, current_picks, party_account_ids)
@@ -95,23 +99,36 @@ class _MainThreadBridge(QObject):
         event_log.log("OVERLAY_HIDE", reason="auto_hide")
         self._window.hide_overlay()
 
+    def _on_self_stats_ready(self, stats):
+        # Always re-fetched on every hotkey press (see OverlayApp.
+        # on_self_stats_hotkey below), including the press that's about to
+        # close it - a same-account repeat fetch within 30s is served from
+        # opendota_client's own cache, so this is cheap, not wasteful.
+        if self._self_stats_window.isVisible():
+            self._self_stats_window.hide_stats()
+        else:
+            self._self_stats_window.render_stats(stats)
+            self._self_stats_window.show_stats()
+
 
 class OverlayApp:
     def __init__(self):
         self.qt_app = QApplication(sys.argv)
         self.qt_app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")))
         self.window = OverlayWindow()
+        self.self_stats_window = SelfStatsWindow()
         self.gsi = GSIServer(config.GSI_HOST, config.GSI_PORT)
         self.executor = ThreadPoolExecutor(max_workers=10)
         self.hide_timer = QTimer()
         self.hide_timer.setSingleShot(True)
 
-        self.bridge = _MainThreadBridge(self.window, self.hide_timer)
+        self.bridge = _MainThreadBridge(self.window, self.hide_timer, self.self_stats_window)
         self.hide_timer.timeout.connect(lambda: self.bridge.on_auto_hide())
 
         self.hotkeys = HotkeyListener(
             on_toggle=self.bridge.toggle_visibility_requested.emit,
             on_expand=self.bridge.expand_requested.emit,
+            on_self_stats=self.on_self_stats_hotkey,
         )
 
         # Last-known lobby state, set by on_new_match (background thread) and
@@ -165,6 +182,14 @@ class OverlayApp:
         # self.window/self.hide_timer directly here. Hand off to the main
         # thread via the bridge signal instead.
         self.bridge.new_match_ready.emit(radiant, dire, current_picks, party_account_ids)
+
+    def on_self_stats_hotkey(self):
+        # Runs on pynput's own listener thread (see this module's
+        # docstring) - blocking here on the network fetch is fine, it
+        # doesn't freeze the UI. Only the actual show/hide + render must
+        # happen on the main thread, via the bridge signal below.
+        stats = fetch_player_stats(config.MY_ACCOUNT_ID) if config.MY_ACCOUNT_ID else None
+        self.bridge.self_stats_ready.emit(stats)
 
     def run(self):
         event_log.init()
