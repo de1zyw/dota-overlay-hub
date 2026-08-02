@@ -20,12 +20,13 @@ def load_all():
         return []
 
 
-def append(account_id, nickname):
+def append(account_id, nickname, match_ids):
     entries = load_all()
     entries.insert(0, {
         "account_id": account_id,
         "nickname": nickname,
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "match_ids": match_ids,
     })
     entries = entries[:MAX_ENTRIES]
     try:

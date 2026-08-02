@@ -155,7 +155,8 @@ class _MainThreadBridge(QObject):
         stats = fetch_player_stats(account_id)
         self._player_stats_window.render_stats(stats)
         self._player_stats_window.show_stats()
-        profile_lookup_history.append(account_id, stats.nickname)
+        match_ids = [match_id for _, _, match_id in stats.recent_matches if match_id is not None]
+        profile_lookup_history.append(account_id, stats.nickname, match_ids)
 
 
 class OverlayApp:
