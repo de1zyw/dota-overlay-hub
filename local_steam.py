@@ -27,13 +27,23 @@ than pulling in a PyPI VDF-parsing dependency just for this one file.
 import os
 import re
 
+from steam_library import _STEAM_ROOT_CANDIDATES
+
 # Same conversion constant used in dota_stats_bot/steam_api.py (STEAM64_BASE).
 STEAM64_BASE = 76561197960265728
 
-_CANDIDATE_PATHS = (
-    "~/.local/share/Steam/config/loginusers.vdf",
-    "~/.steam/steam/config/loginusers.vdf",
-)
+# Steam's own config lives under its install ROOT, not under whichever
+# library folder happens to have a given game (that's a separate concept -
+# see steam_library.py) - so this reuses the same root-candidate list
+# (covers flatpak/snap too) rather than the old hardcoded 2-path list,
+# which missed ~/.steam/root and both packaged variants.
+_CANDIDATE_PATHS = tuple(f"{root}/config/loginusers.vdf" for root in _STEAM_ROOT_CANDIDATES)
+
+# Manual escape hatch, same pattern as steam_library_override.txt: if
+# auto-detection still can't find/parse loginusers.vdf, drop the account_id
+# (Steam32, not the 17-digit SteamID64) in this file, one line, no quotes.
+# Checked first, before any auto-detection.
+_OVERRIDE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_account_override.txt")
 
 # Each account entry: a 17-digit SteamID64 key followed by a brace-delimited
 # body. Bodies in this file are flat (no nested braces), so a non-nested
@@ -60,6 +70,15 @@ def get_local_account_id():
     Never raises.
     """
     try:
+        if os.path.isfile(_OVERRIDE_FILE):
+            with open(_OVERRIDE_FILE, "r", encoding="utf-8") as f:
+                override = f.read().strip()
+            if override:
+                try:
+                    return int(override)
+                except ValueError:
+                    pass
+
         path = _find_loginusers_path()
         if not path:
             return None

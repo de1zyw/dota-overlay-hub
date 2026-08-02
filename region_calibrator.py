@@ -1,10 +1,17 @@
-"""Fullscreen transparent overlay for one-time drag-to-select calibration
-of the profile-lookup OCR region. Shown via a hotkey while a real Dota
-profile screen is visible behind it - this only works because Linux Dota
-typically runs fullscreen-*windowed*, not exclusive fullscreen, so this
-overlay can render on top while the game keeps rendering underneath."""
+"""Fullscreen drag-to-select calibration of the profile-lookup OCR region.
+Shown via a hotkey while a real Dota profile screen is visible.
+
+Grabs a real screenshot BEFORE showing itself and paints that as an
+opaque backdrop, rather than rendering as a live translucent window on
+top of the game. A live-transparent window (WA_TranslucentBackground)
+depends on a compositor being active to blend correctly - without one
+(common on tiling WMs like i3/dwm/bspwm without picom running), Qt just
+paints solid black instead of see-through, which made the game
+underneath invisible and selection impossible. A static screenshot
+backdrop sidesteps that dependency entirely: it's just a normal opaque
+image, no compositing involved."""
 from PyQt6.QtCore import QRect, Qt
-from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
 import profile_lookup_settings
@@ -19,14 +26,22 @@ class RegionCalibrator(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self._start = None
         self._current = None
+
+        screen = QGuiApplication.primaryScreen()
+        # Grabbed BEFORE showFullScreen() so this window itself isn't in
+        # the shot - grabWindow(0) captures the whole screen's current
+        # framebuffer contents directly, independent of any compositor.
+        self._backdrop = screen.grabWindow(0) if screen else None
+
         self.showFullScreen()
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        if self._backdrop is not None:
+            painter.drawPixmap(self.rect(), self._backdrop)
         painter.fillRect(self.rect(), QColor(0, 0, 0, 60))
         if self._start and self._current:
             rect = QRect(self._start, self._current).normalized()
