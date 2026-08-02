@@ -3,14 +3,17 @@
 IMPORTANT: the exact raw JSON key names Dota uses for the 'draft' section
 are NOT confirmed from documentation (only a C# wrapper library's abstracted
 property names are known publicly, not the literal wire format). This server
-does not assume a schema - it captures every payload verbatim to a JSONL file
-so the real shape can be inspected once a live match is played with GSI
-enabled. `latest_raw` exposes the full parsed JSON for draft_matcher.py to
-attempt a best-effort read from.
+does not assume a schema - it captures every payload verbatim as a
+GSI_PAYLOAD event in the per-run diagnostic log (event_log.py) so the real
+shape can be inspected once a live match is played with GSI enabled.
+`latest_raw` exposes the full parsed JSON for draft_matcher.py to attempt a
+best-effort read from.
 """
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import event_log
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -33,10 +36,9 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 class GSIServer:
-    def __init__(self, host, port, captures_path="gsi_captures.jsonl"):
+    def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.captures_path = captures_path
         self.latest_raw = None
         self._lock = threading.Lock()
         self._httpd = None
@@ -45,8 +47,7 @@ class GSIServer:
     def _on_payload(self, data):
         with self._lock:
             self.latest_raw = data
-        with open(self.captures_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(data) + "\n")
+        event_log.log("GSI_PAYLOAD", data=data)
 
     def start(self):
         self._httpd = HTTPServer((self.host, self.port), _Handler)

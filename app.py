@@ -19,6 +19,7 @@ queues across threads when the receiver is such a QObject, which is why the
 window-touching code lives in this class's own slot methods rather than in
 a plain function or a bound method of the (non-QObject) `OverlayApp`.
 """
+import os
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -28,6 +29,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
 import config
+import event_log
 from draft_matcher import match_current_picks
 from gsi_server import GSIServer
 from hotkeys import HotkeyListener
@@ -71,17 +73,26 @@ class _MainThreadBridge(QObject):
 
     def _on_new_match_ready(self, radiant, dire, current_picks, party_account_ids):
         self._window.render_lobby(radiant, dire, current_picks, party_account_ids)
+        event_log.log("OVERLAY_SHOW", reason="new_match")
         self._window.show_overlay()
         self._hide_timer.start(config.AUTO_HIDE_SECONDS * 1000)
 
     def _on_toggle_visibility(self):
+        event_log.log("HOTKEY", action="toggle")
         if self._window.isVisible():
+            event_log.log("OVERLAY_HIDE", reason="hotkey")
             self._window.hide_overlay()
         else:
+            event_log.log("OVERLAY_SHOW", reason="hotkey")
             self._window.show_overlay()
 
     def _on_expand(self):
+        event_log.log("HOTKEY", action="expand")
         self._window.toggle_expanded()
+
+    def on_auto_hide(self):
+        event_log.log("OVERLAY_HIDE", reason="auto_hide")
+        self._window.hide_overlay()
 
 
 class OverlayApp:
@@ -92,9 +103,9 @@ class OverlayApp:
         self.executor = ThreadPoolExecutor(max_workers=10)
         self.hide_timer = QTimer()
         self.hide_timer.setSingleShot(True)
-        self.hide_timer.timeout.connect(self.window.hide_overlay)
 
         self.bridge = _MainThreadBridge(self.window, self.hide_timer)
+        self.hide_timer.timeout.connect(lambda: self.bridge.on_auto_hide())
 
         self.hotkeys = HotkeyListener(
             on_toggle=self.bridge.toggle_visibility_requested.emit,
@@ -125,6 +136,7 @@ class OverlayApp:
         if state is None:
             return
         current_picks = match_current_picks(state.roster, self.gsi.latest_raw)
+        event_log.log("PICK_POLL", picks=current_picks)
         self.window.render_lobby(state.radiant, state.dire, current_picks, state.party_account_ids)
 
     def on_new_match(self, roster, party_account_ids):
@@ -133,6 +145,16 @@ class OverlayApp:
 
         radiant = [stats_by_id[aid] for team, _, aid in roster if team == "radiant"]
         dire = [stats_by_id[aid] for team, _, aid in roster if team == "dire"]
+
+        event_log.log(
+            "MATCH_FOUND",
+            radiant=[aid for team, _, aid in roster if team == "radiant"],
+            dire=[aid for team, _, aid in roster if team == "dire"],
+            party=sorted(party_account_ids),
+        )
+        for stats in stats_by_id.values():
+            event_log.log("STATS_FETCH", account_id=stats.account_id, nickname=stats.nickname, hidden=stats.hidden)
+
         current_picks = match_current_picks(roster, self.gsi.latest_raw)
 
         self.match_state = MatchState(roster, radiant, dire, party_account_ids)
@@ -143,6 +165,10 @@ class OverlayApp:
         self.bridge.new_match_ready.emit(radiant, dire, current_picks, party_account_ids)
 
     def run(self):
+        event_log.init()
+        event_log.install_exception_hooks()
+        event_log.log("APP_START", pid=os.getpid())
+
         self.gsi.start()
         self.hotkeys.start()
         self.pick_timer.start(int(config.GSI_POLL_INTERVAL_SECONDS * 1000))
