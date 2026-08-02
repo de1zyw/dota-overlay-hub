@@ -90,7 +90,7 @@ class PlayerStats:
     rank_tier: int = None
     total_games: int = 0
     winrate: float = None
-    recent_matches: list = field(default_factory=list)  # [(hero_id, won: bool), ...], newest first, max 10
+    recent_matches: list = field(default_factory=list)  # [(hero_id, won: bool, match_id: int), ...], newest first, max 10
     top_heroes: list = field(default_factory=list)
     dotabuff_url: str = ""
 
@@ -121,7 +121,7 @@ def fetch_player_stats(account_id):
     except OpenDotaError:
         recent = []
     recent_matches = [
-        (m.get("hero_id"), m.get("radiant_win") == (m.get("player_slot", 0) < 128))
+        (m.get("hero_id"), m.get("radiant_win") == (m.get("player_slot", 0) < 128), m.get("match_id"))
         for m in recent[:10]
     ]
 
