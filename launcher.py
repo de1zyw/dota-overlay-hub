@@ -24,7 +24,8 @@ from PyQt6.QtWidgets import (
 
 import config
 import hotkey_settings
-from launcher_checks import CHECKS, SELF_STATS_CHECKS, STATUS_ERROR, STATUS_OK, STATUS_WARN
+import profile_lookup_history
+from launcher_checks import CHECKS, PROFILE_LOOKUP_CHECKS, SELF_STATS_CHECKS, STATUS_ERROR, STATUS_OK, STATUS_WARN
 from logs_view import list_log_runs
 from overlay_window import _GradientPanel
 
@@ -118,17 +119,24 @@ OVERLAY_ENTRIES = [
         "checks": SELF_STATS_CHECKS,
         "entry_script": "app.py",
     },
+    {
+        "name": "Профиль по клику",
+        "description": (
+            "Открой любой профиль в Доте, нажми "
+            f"{hotkey_settings.load()['profile_lookup']} — распознает ник через OCR и "
+            "покажет стату. Перед первым использованием откалибруй область "
+            f"({hotkey_settings.load()['calibrate']} при открытом профиле)."
+        ),
+        "checks": PROFILE_LOOKUP_CHECKS,
+        "entry_script": "app.py",
+    },
 ]
 
 # Queued-but-unbuilt features, shown as dimmed placeholder cards so the
 # Overlays page reads as a roadmap instead of leaving empty space below the
-# real cards.
-COMING_SOON_ENTRIES = [
-    {
-        "name": "Профиль по клику",
-        "description": "Показ статы того игрока, чей профиль ты открыл прямо в игре.",
-    },
-]
+# real cards. Currently empty - kept as a list so a future overlay just
+# drops in as one more entry, no structural change needed.
+COMING_SOON_ENTRIES = []
 
 
 def _check_item(label, status, message):
@@ -434,6 +442,37 @@ class _SettingsPage(QWidget):
             self._status_label.setText("Не удалось сохранить настройки")
 
 
+class _HistoryPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        title = QLabel("История просмотренных профилей")
+        title.setStyleSheet("color: white; font-weight: bold; font-family: sans-serif; font-size: 14px;")
+        layout.addWidget(title)
+
+        self._list = QListWidget()
+        self._list.setStyleSheet(
+            "QListWidget { background-color: rgba(255,255,255,10); color: white; "
+            "font-family: sans-serif; font-size: 12px; border: none; border-radius: 6px; }"
+            "QListWidget::item { padding: 6px; }"
+        )
+        layout.addWidget(self._list)
+
+        self.refresh()
+
+    def refresh(self):
+        self._list.clear()
+        entries = profile_lookup_history.load_all()
+        if not entries:
+            self._list.addItem("Пока пусто — история появится после первого использования «Профиль по клику»")
+            return
+        for entry in entries:
+            self._list.addItem(f"{entry['timestamp']}  —  {entry['nickname']}")
+
+
 class LauncherWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -476,20 +515,24 @@ class LauncherWindow(QWidget):
         overlays_btn = QPushButton("ОВЕРЛЕИ")
         logs_btn = QPushButton("ЛОГИ")
         settings_btn = QPushButton("НАСТРОЙКИ")
-        for btn in (overlays_btn, logs_btn, settings_btn):
+        history_btn = QPushButton("ИСТОРИЯ")
+        for btn in (overlays_btn, logs_btn, settings_btn, history_btn):
             btn.setCheckable(True)
             btn.setStyleSheet(
                 "QPushButton { text-align: left; color: #cccccc; background: transparent; "
                 "border: none; font-family: sans-serif; font-size: 12px; padding: 8px; }"
                 "QPushButton:checked { color: white; font-weight: bold; }"
             )
+        nav_buttons = [overlays_btn, logs_btn, settings_btn, history_btn]
         overlays_btn.setChecked(True)
-        overlays_btn.clicked.connect(lambda: self._switch_page(0, [overlays_btn, logs_btn, settings_btn]))
-        logs_btn.clicked.connect(lambda: self._switch_page(1, [overlays_btn, logs_btn, settings_btn]))
-        settings_btn.clicked.connect(lambda: self._switch_page(2, [overlays_btn, logs_btn, settings_btn]))
+        overlays_btn.clicked.connect(lambda: self._switch_page(0, nav_buttons))
+        logs_btn.clicked.connect(lambda: self._switch_page(1, nav_buttons))
+        settings_btn.clicked.connect(lambda: self._switch_page(2, nav_buttons))
+        history_btn.clicked.connect(lambda: self._switch_page(3, nav_buttons))
         sidebar_layout.addWidget(overlays_btn)
         sidebar_layout.addWidget(logs_btn)
         sidebar_layout.addWidget(settings_btn)
+        sidebar_layout.addWidget(history_btn)
         sidebar_layout.addStretch()
 
         panel_layout.addWidget(sidebar)
@@ -500,9 +543,11 @@ class LauncherWindow(QWidget):
         self._overlays_page = _OverlaysPage()
         self._logs_page = _LogsPage()
         self._settings_page = _SettingsPage()
+        self._history_page = _HistoryPage()
         self._stack.addWidget(self._overlays_page)
         self._stack.addWidget(self._logs_page)
         self._stack.addWidget(self._settings_page)
+        self._stack.addWidget(self._history_page)
         content_layout.addWidget(self._stack)
         panel_layout.addWidget(content)
 
@@ -512,6 +557,8 @@ class LauncherWindow(QWidget):
             btn.setChecked(i == index)
         if index == 1:
             self._logs_page.refresh()
+        elif index == 3:
+            self._history_page.refresh()
 
 
 if __name__ == "__main__":
