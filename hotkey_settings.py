@@ -12,6 +12,8 @@ DEFAULTS = {
     "toggle": "<ctrl>+<alt>+d",
     "expand": "<ctrl>+<alt>+e",
     "self_stats": "<ctrl>+<alt>+s",
+    "calibrate": "<ctrl>+<alt>+r",
+    "profile_lookup": "<ctrl>+<alt>+p",
 }
 
 

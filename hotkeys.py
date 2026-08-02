@@ -9,13 +9,15 @@ import event_log
 
 
 class HotkeyListener:
-    def __init__(self, on_toggle, on_expand, on_self_stats):
+    def __init__(self, on_toggle, on_expand, on_self_stats, on_calibrate, on_profile_lookup):
         self._listener = None
         try:
             self._listener = keyboard.GlobalHotKeys({
                 config.HOTKEY_TOGGLE: on_toggle,
                 config.HOTKEY_EXPAND: on_expand,
                 config.HOTKEY_SELF_STATS: on_self_stats,
+                config.HOTKEY_CALIBRATE: on_calibrate,
+                config.HOTKEY_PROFILE_LOOKUP: on_profile_lookup,
             })
         except Exception as e:
             # A malformed hotkey string (e.g. hand-typo'd via the hub's

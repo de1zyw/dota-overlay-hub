@@ -380,6 +380,8 @@ class _SettingsPage(QWidget):
         ("toggle", "Показать/скрыть"),
         ("expand", "Свернуть/развернуть"),
         ("self_stats", "Моя стата"),
+        ("calibrate", "Калибровка профиля"),
+        ("profile_lookup", "Профиль по клику"),
     ]
 
     def __init__(self):

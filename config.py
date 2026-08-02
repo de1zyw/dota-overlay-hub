@@ -22,6 +22,8 @@ _hotkeys = _load_hotkeys()
 HOTKEY_TOGGLE = _hotkeys["toggle"]
 HOTKEY_EXPAND = _hotkeys["expand"]
 HOTKEY_SELF_STATS = _hotkeys["self_stats"]
+HOTKEY_CALIBRATE = _hotkeys["calibrate"]
+HOTKEY_PROFILE_LOOKUP = _hotkeys["profile_lookup"]
 
 WINRATE_GREEN = 55.0
 WINRATE_RED = 45.0
