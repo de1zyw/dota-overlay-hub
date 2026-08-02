@@ -6,17 +6,20 @@ import subprocess
 import sys
 from datetime import datetime
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QSystemTrayIcon,
@@ -628,12 +631,27 @@ class LauncherWindow(QWidget):
         content_layout.addWidget(self._stack)
         panel_layout.addWidget(content)
 
+        # Fade the page content in on every switch - a plain instant
+        # setCurrentIndex() felt flat given how much visual polish the rest
+        # of the app already has. QGraphicsOpacityEffect is the standard
+        # PyQt way to animate a widget's opacity (QStackedWidget itself has
+        # no built-in transition support).
+        self._stack_opacity = QGraphicsOpacityEffect(self._stack)
+        self._stack.setGraphicsEffect(self._stack_opacity)
+        self._fade_anim = QPropertyAnimation(self._stack_opacity, b"opacity", self)
+        self._fade_anim.setDuration(180)
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
         self._setup_tray_icon()
 
     def _switch_page(self, index, nav_buttons):
         self._stack.setCurrentIndex(index)
         for i, btn in enumerate(nav_buttons):
             btn.setChecked(i == index)
+        self._fade_anim.stop()
+        self._fade_anim.start()
         if index == 1:
             self._logs_page.refresh()
         elif index == 3:
@@ -684,6 +702,27 @@ class LauncherWindow(QWidget):
                 self._show_from_tray()
 
 
+_SINGLE_INSTANCE_KEY = "dota-overlay-hub-single-instance"
+
+
+def _acquire_single_instance():
+    """Returns a listening QLocalServer if this is the only running
+    instance, or None if another one already holds the key. Connecting
+    first (rather than just trying to listen) distinguishes "another
+    instance is alive" from "a stale socket file was left behind by a
+    crashed previous run" - in the latter case connectToServer() fails
+    and removeServer() clears the stale file before we listen ourselves."""
+    socket = QLocalSocket()
+    socket.connectToServer(_SINGLE_INSTANCE_KEY)
+    if socket.waitForConnected(200):
+        socket.disconnectFromServer()
+        return None
+    QLocalServer.removeServer(_SINGLE_INSTANCE_KEY)
+    server = QLocalServer()
+    server.listen(_SINGLE_INSTANCE_KEY)
+    return server
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     # Ties this running process to dota-overlay-hub.desktop by name, so the
@@ -694,6 +733,15 @@ if __name__ == "__main__":
     # This is now a tray-resident app - closing/hiding every window must not
     # exit the process; only the tray menu's "Выйти" (or Ctrl+C) should.
     app.setQuitOnLastWindowClosed(False)
+
+    single_instance_server = _acquire_single_instance()
+    if single_instance_server is None:
+        QMessageBox.information(
+            None, "Dota Overlay Hub",
+            "Приложение уже запущено — смотри иконку в трее.",
+        )
+        sys.exit(0)
+
     window = LauncherWindow()
     window.show()
     sys.exit(app.exec())
