@@ -2,8 +2,8 @@
 softly gradient-accented theme (pink/blue/purple glows on near-black,
 inspired by a user-supplied reference palette, darkened/desaturated for
 readability over live gameplay) and real hero/rank icons."""
-from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPixmap
+from PyQt6.QtCore import Qt, QPointF, QRectF
+from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPixmap, QRadialGradient
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -18,7 +18,9 @@ from assets import get_faction_icon_path, get_hero_icon_path, get_rank_icon_path
 
 ACCENT_PINK = QColor("#FF9CE3")
 ACCENT_BLUE = QColor("#7DD3FC")
-ACCENT_PURPLE = QColor("#B388FF")
+# Purple (#B388FF) is no longer a standalone constant - it now emerges
+# naturally where the pink and blue glows below overlap, matching the
+# reference image, rather than being painted as its own gradient stop.
 # "This is you" row highlight - deliberately not blue, so it never reads as
 # the same signal as the party-underline treatment below.
 ACCENT_GOLD = QColor("#FFD166")
@@ -27,7 +29,11 @@ ACCENT_GOLD = QColor("#FFD166")
 # is close to solid while leaving a hint of translucency at the very edge of
 # perceptibility, still recognizable as an overlay rather than a fully
 # opaque window.
-BASE_BG = QColor(10, 10, 16, 250)  # near-black, mostly opaque so text stays readable
+# Matches the user's original reference image ("AURA" card, 2026-08-02
+# redesign pass) more literally than the old base - near-pure black rather
+# than a dark blue-grey, since the reference's glows sit on true black with
+# large black corners, not a lit-up panel edge to edge.
+BASE_BG = QColor(4, 4, 6, 250)
 
 ICON_SIZE = 28
 HERO_ICON_SIZE = 32
@@ -125,10 +131,35 @@ def _match_history_group(recent_matches):
     return group
 
 
+def _rounded_rect_path(rect, rx, ry):
+    path = QPainterPath()
+    path.addRoundedRect(rect, rx, ry)
+    return path
+
+
+def _glow(center, radius, color, peak_alpha):
+    """A soft radial light patch - full color at the center, fading to
+    fully transparent by its edge, so overlapping glows blend into each
+    other (e.g. pink + blue -> purple in between) instead of showing a
+    hard-edged circle."""
+    gradient = QRadialGradient(center, radius)
+    core = QColor(color)
+    core.setAlpha(peak_alpha)
+    edge = QColor(color)
+    edge.setAlpha(0)
+    gradient.setColorAt(0.0, core)
+    gradient.setColorAt(1.0, edge)
+    return gradient
+
+
 class _GradientPanel(QWidget):
-    """Paints the dark base + three soft, low-opacity accent glows behind
-    the content - a subtler, translucency-friendly take on the reference
-    palette rather than the reference's full-opacity marketing-card look."""
+    """Matches the user's original reference image ("AURA" card): near-black
+    base with two large, soft, blurred glow patches - pink toward the top
+    left, blue toward the right - that overlap in the middle into purple,
+    rather than a single smooth gradient wash spanning the whole panel.
+    Most of the panel (corners especially) stays close to pure black,
+    exactly as in the reference, with the glows read as distinct light
+    sources rather than a tinted background."""
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -139,18 +170,20 @@ class _GradientPanel(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(rect, 14, 14)
 
-        gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        glow_pink = QColor(ACCENT_PINK)
-        glow_pink.setAlpha(40)
-        glow_blue = QColor(ACCENT_BLUE)
-        glow_blue.setAlpha(40)
-        glow_purple = QColor(ACCENT_PURPLE)
-        glow_purple.setAlpha(40)
-        gradient.setColorAt(0.0, glow_pink)
-        gradient.setColorAt(0.5, glow_purple)
-        gradient.setColorAt(1.0, glow_blue)
-        painter.setBrush(gradient)
-        painter.drawRoundedRect(rect, 14, 14)
+        diagonal = (rect.width() ** 2 + rect.height() ** 2) ** 0.5
+        painter.setClipPath(_rounded_rect_path(rect, 14, 14))
+
+        painter.setBrush(_glow(
+            QPointF(rect.left() + rect.width() * 0.18, rect.top() + rect.height() * 0.2),
+            diagonal * 0.55, ACCENT_PINK, 70,
+        ))
+        painter.drawRect(rect)
+
+        painter.setBrush(_glow(
+            QPointF(rect.right() - rect.width() * 0.15, rect.top() + rect.height() * 0.55),
+            diagonal * 0.55, ACCENT_BLUE, 70,
+        ))
+        painter.drawRect(rect)
 
         super().paintEvent(event)
 

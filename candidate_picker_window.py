@@ -35,6 +35,7 @@ class CandidatePickerWindow(QWidget):
             item = self._layout.takeAt(1)
             widget = item.widget()
             if widget:
+                widget.hide()
                 widget.deleteLater()
 
         for candidate in candidates:

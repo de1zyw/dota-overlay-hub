@@ -233,6 +233,13 @@ class _OverlayCard(QWidget):
             item = self._checks_layout.takeAt(0)
             widget = item.widget()
             if widget:
+                # hide() first, not just deleteLater(): takeAt() only
+                # removes the widget from the LAYOUT's bookkeeping, it stays
+                # visible at its old geometry until Qt actually processes
+                # the deferred deleteLater() on a later event-loop tick - in
+                # between, it briefly overlapped the newly-added row at the
+                # same position, showing as ghosted/doubled text.
+                widget.hide()
                 widget.deleteLater()
 
         has_error = False
