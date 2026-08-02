@@ -159,11 +159,15 @@ def _check_item(label, status, message):
     header_layout.setContentsMargins(0, 0, 0, 0)
     header_layout.setSpacing(8)
 
-    header_layout.addWidget(_status_dot(status))
+    # AlignVCenter on the fixed-size dot specifically - without it, Qt
+    # top-aligns the 12px dot within the row's full height (set by the
+    # label's font line-height), so the dot sat visibly higher than the
+    # label's text, looking like the text had slid down relative to it.
+    header_layout.addWidget(_status_dot(status), 0, Qt.AlignmentFlag.AlignVCenter)
 
     label_widget = QLabel(label)
     label_widget.setStyleSheet("color: white; font-family: sans-serif; font-size: 13px; background: transparent;")
-    header_layout.addWidget(label_widget)
+    header_layout.addWidget(label_widget, 0, Qt.AlignmentFlag.AlignVCenter)
     header_layout.addStretch()
     layout.addWidget(header)
 
