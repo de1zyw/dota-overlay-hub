@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QIcon
+from PyQt6.QtGui import QColor, QIcon, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -87,16 +87,37 @@ QPushButton:disabled {
 """
 
 
-def _status_dot(status):
+class _StatusDot(QWidget):
     """A small colored circle with no glyph/text - avoids relying on any
     Unicode symbol (✓/!/✗), which some systems render as colorful emoji
-    "stickers" instead of a plain flat icon depending on installed fonts."""
-    dot = QLabel()
-    dot.setFixedSize(12, 12)
-    dot.setStyleSheet(
-        f"background-color: {_STATUS_COLOR[status]}; border-radius: 6px;"
-    )
-    return dot
+    "stickers" instead of a plain flat icon depending on installed fonts.
+    Paints itself directly in paintEvent using its own current rect,
+    rather than a QLabel showing a fixed-size pixmap or a QSS
+    background-color+border-radius - both of those rendered as a half-moon
+    (flat-cut bottom) specifically when placed inside the hub's full
+    sidebar+QStackedWidget window (reproduced via QWidget.grab(), so not
+    an X11/screenshot-tool artifact - some real Qt layout interaction in
+    that specific context clipped the label/pixmap's visible height).
+    A self-painting widget can't be clipped this way: paintEvent always
+    draws an ellipse inscribed in whatever rect the widget actually has."""
+
+    _SIZE = 12
+
+    def __init__(self, status):
+        super().__init__()
+        self._color = QColor(_STATUS_COLOR[status])
+        self.setFixedSize(self._SIZE, self._SIZE)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self._color)
+        painter.drawEllipse(self.rect())
+
+
+def _status_dot(status):
+    return _StatusDot(status)
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
