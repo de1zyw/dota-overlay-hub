@@ -105,6 +105,20 @@ OVERLAY_ENTRIES = [
     },
 ]
 
+# Queued-but-unbuilt features, shown as dimmed placeholder cards so the
+# Overlays page reads as a roadmap instead of leaving empty space below the
+# one real card.
+COMING_SOON_ENTRIES = [
+    {
+        "name": "Личная статистика",
+        "description": "Своя стата по горячей клавише, без привязки к драфту.",
+    },
+    {
+        "name": "Профиль по клику",
+        "description": "Показ статы того игрока, чей профиль ты открыл прямо в игре.",
+    },
+]
+
 
 def _check_item(label, status, message):
     # Every widget here gets an explicit "background: transparent;" - without
@@ -225,6 +239,37 @@ class _OverlayCard(QWidget):
         QApplication.instance().quit()
 
 
+class _ComingSoonCard(QWidget):
+    def __init__(self, entry):
+        super().__init__()
+        self.setObjectName("comingSoonCard")
+        self.setStyleSheet(
+            "QWidget#comingSoonCard { background-color: rgba(255, 255, 255, 5); border-radius: 8px; "
+            "border: 1px dashed rgba(255, 255, 255, 25); }"
+        )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(4)
+
+        header = QHBoxLayout()
+        name = QLabel(entry["name"])
+        name.setStyleSheet("color: #999999; font-weight: bold; font-family: sans-serif; font-size: 15px; background: transparent;")
+        header.addWidget(name)
+        header.addStretch()
+        badge = QLabel("СКОРО")
+        badge.setStyleSheet(
+            "color: #888888; font-family: sans-serif; font-size: 10px; font-weight: bold; "
+            "letter-spacing: 1px; background: transparent;"
+        )
+        header.addWidget(badge)
+        layout.addLayout(header)
+
+        desc = QLabel(entry["description"])
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #666666; font-family: sans-serif; font-size: 12px; background: transparent;")
+        layout.addWidget(desc)
+
+
 class _OverlaysPage(QWidget):
     def __init__(self):
         super().__init__()
@@ -233,6 +278,8 @@ class _OverlaysPage(QWidget):
         layout.setSpacing(12)
         for entry in OVERLAY_ENTRIES:
             layout.addWidget(_OverlayCard(entry))
+        for entry in COMING_SOON_ENTRIES:
+            layout.addWidget(_ComingSoonCard(entry))
         layout.addStretch()
 
 
