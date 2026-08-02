@@ -445,32 +445,54 @@ class _SettingsPage(QWidget):
 class _HistoryPage(QWidget):
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-
-        title = QLabel("История просмотренных профилей")
-        title.setStyleSheet("color: white; font-weight: bold; font-family: sans-serif; font-size: 14px;")
-        layout.addWidget(title)
+        layout.setSpacing(12)
 
         self._list = QListWidget()
+        self._list.setFixedWidth(260)
         self._list.setStyleSheet(
             "QListWidget { background-color: rgba(255,255,255,10); color: white; "
             "font-family: sans-serif; font-size: 12px; border: none; border-radius: 6px; }"
             "QListWidget::item { padding: 6px; }"
+            "QListWidget::item:selected { background-color: rgba(255,255,255,30); }"
         )
+        self._list.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self._list)
 
+        self._detail = QLabel("Выбери запись слева")
+        self._detail.setWordWrap(True)
+        self._detail.setTextFormat(Qt.TextFormat.RichText)
+        self._detail.setOpenExternalLinks(True)
+        self._detail.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._detail.setStyleSheet("color: white; font-family: sans-serif; font-size: 12px;")
+        layout.addWidget(self._detail, 1)
+
+        self._entries = []
         self.refresh()
 
     def refresh(self):
+        self._entries = profile_lookup_history.load_all()
         self._list.clear()
-        entries = profile_lookup_history.load_all()
-        if not entries:
-            self._list.addItem("Пока пусто — история появится после первого использования «Профиль по клику»")
+        if not self._entries:
+            self._detail.setText("Пока пусто — история появится после первого использования «Профиль по клику»")
             return
-        for entry in entries:
+        for entry in self._entries:
             self._list.addItem(f"{entry['timestamp']}  —  {entry['nickname']}")
+        self._list.setCurrentRow(0)
+
+    def _on_row_changed(self, row):
+        if row < 0 or row >= len(self._entries):
+            return
+        entry = self._entries[row]
+        lines = [f"<b>{entry['nickname']}</b>", entry["timestamp"], "", "Матчи:"]
+        match_ids = entry.get("match_ids") or []
+        if not match_ids:
+            lines.append("(нет данных о матчах)")
+        else:
+            for match_id in match_ids:
+                lines.append(f'<a href="https://www.dotabuff.com/matches/{match_id}">{match_id}</a>')
+        self._detail.setText("<br>".join(lines))
 
 
 class LauncherWindow(QWidget):
