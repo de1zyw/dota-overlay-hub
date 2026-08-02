@@ -1,5 +1,6 @@
 import os
 
+from hotkey_settings import load as _load_hotkeys
 from local_steam import get_local_account_id
 
 STEAM_LIBRARY = os.path.expanduser("~/.local/share/Steam")
@@ -17,8 +18,10 @@ AUTO_HIDE_SECONDS = 25
 POLL_INTERVAL_SECONDS = 1.0
 GSI_POLL_INTERVAL_SECONDS = 2.0
 
-HOTKEY_TOGGLE = "<ctrl>+<alt>+d"
-HOTKEY_EXPAND = "<ctrl>+<alt>+e"
+_hotkeys = _load_hotkeys()
+HOTKEY_TOGGLE = _hotkeys["toggle"]
+HOTKEY_EXPAND = _hotkeys["expand"]
+HOTKEY_SELF_STATS = _hotkeys["self_stats"]
 
 WINRATE_GREEN = 55.0
 WINRATE_RED = 45.0
