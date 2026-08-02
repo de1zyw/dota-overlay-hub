@@ -2,8 +2,12 @@ import os
 
 from hotkey_settings import load as _load_hotkeys
 from local_steam import get_local_account_id
+from steam_library import find_dota_library
 
-STEAM_LIBRARY = os.path.expanduser("~/.local/share/Steam")
+# Auto-detected: the Steam LIBRARY FOLDER that actually has Dota 2
+# installed, not necessarily where Steam itself lives (e.g. Steam on an
+# HDD, games on a separate SSD library folder) - see steam_library.py.
+STEAM_LIBRARY = find_dota_library()
 SERVER_LOG_PATH = os.path.join(
     STEAM_LIBRARY, "steamapps/common/dota 2 beta/game/dota/server_log.txt"
 )
