@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 import config
@@ -98,6 +99,7 @@ class _MainThreadBridge(QObject):
 class OverlayApp:
     def __init__(self):
         self.qt_app = QApplication(sys.argv)
+        self.qt_app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")))
         self.window = OverlayWindow()
         self.gsi = GSIServer(config.GSI_HOST, config.GSI_PORT)
         self.executor = ThreadPoolExecutor(max_workers=10)

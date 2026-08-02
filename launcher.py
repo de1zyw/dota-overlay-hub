@@ -6,7 +6,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -336,6 +336,7 @@ class LauncherWindow(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(os.path.join(PROJECT_DIR, "icon.png")))
     window = LauncherWindow()
     window.show()
     sys.exit(app.exec())
