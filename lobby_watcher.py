@@ -23,6 +23,8 @@ import os
 import re
 import time
 
+import event_log
+
 _LOBBY_RE = re.compile(r"\(Lobby\s+\d+\s+DOTA_GAMEMODE_\S+((?:\s*\d+:\[U:1:\d+\])+)\)")
 _PARTY_RE = re.compile(r"\(Party\s+\d+((?:\s*\d+:\[U:1:\d+\])+)\)")
 _ENTRY_RE = re.compile(r"(\d+):\[U:1:(\d+)\]")
@@ -68,16 +70,48 @@ def parse_latest_match(log_path):
 
 
 def watch_for_new_match(log_path, callback, poll_interval=1.0):
-    last_size = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+    # Logged once at startup - the single most useful fact for diagnosing
+    # "roster never detected" reports, since it distinguishes "file simply
+    # doesn't exist yet" (never played a match through normal matchmaking
+    # accept on this install) from every other failure mode below.
+    file_exists = os.path.exists(log_path)
+    event_log.log(
+        "LOBBY_WATCHER_START", path=log_path, file_exists=file_exists,
+        size=os.path.getsize(log_path) if file_exists else None,
+    )
+    last_size = os.path.getsize(log_path) if file_exists else 0
+    was_missing = not file_exists
     while True:
         time.sleep(poll_interval)
-        if not os.path.exists(log_path):
-            continue
-        size = os.path.getsize(log_path)
-        if size > last_size:
-            last_size = size
-            roster, party_account_ids = parse_latest_match(log_path)
-            if roster:
-                callback(roster, party_account_ids)
-        elif size < last_size:
-            last_size = size  # file truncated/rotated, resync silently
+        try:
+            if not os.path.exists(log_path):
+                continue
+            if was_missing:
+                # File appeared after the watcher started (created by Dota
+                # mid-session) - worth a log line since LOBBY_WATCHER_START
+                # above would otherwise be the only (now stale) signal
+                # about its existence.
+                event_log.log("LOBBY_LOG_APPEARED", path=log_path)
+                was_missing = False
+            size = os.path.getsize(log_path)
+            if size > last_size:
+                last_size = size
+                roster, party_account_ids = parse_latest_match(log_path)
+                if roster:
+                    callback(roster, party_account_ids)
+                else:
+                    # File grew but no line matched the (Lobby ...)
+                    # pattern - distinct from "file never grew at all".
+                    # If this shows up in a real log, the regex/format
+                    # assumption in _parse_line is wrong for that client
+                    # version, not a detection-timing issue.
+                    event_log.log("LOBBY_LOG_GREW_NO_MATCH", size=size)
+            elif size < last_size:
+                last_size = size  # file truncated/rotated, resync silently
+        except OSError as e:
+            # A manually-mounted drive can transiently deny access (e.g.
+            # remount, permissions not yet settled) - previously this
+            # would propagate out of the loop and permanently kill this
+            # daemon thread for the rest of the session. Log once per
+            # occurrence and keep retrying instead.
+            event_log.log("LOBBY_WATCHER_IO_ERROR", message=str(e))

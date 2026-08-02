@@ -252,16 +252,31 @@ class OverlayApp:
         # screen capture, OCR, and the network search call. Only the
         # actual window show/hide + render must happen on the main
         # thread, via the bridge signal below.
+        event_log.log("PROFILE_LOOKUP_HOTKEY")
         region = profile_lookup_settings.load()
         if region is None:
+            event_log.log("PROFILE_LOOKUP_RESULT", stage="no_region")
             self.bridge.profile_lookup_ready.emit([])
             return
         image = capture_region(region)
+        # Logged even on success - the raw OCR text is the single most
+        # useful piece of evidence when a lookup fails downstream (bad
+        # crop, wrong font contrast, wrong language pack all show up
+        # here as garbled/empty text, distinct from "OCR read a real
+        # nickname but OpenDota search found no match").
         nickname = read_nickname(image)
+        event_log.log(
+            "PROFILE_LOOKUP_RESULT", stage="ocr_done",
+            captured=image is not None, nickname=nickname,
+        )
         if not nickname:
             self.bridge.profile_lookup_ready.emit([])
             return
         candidates = search_players(nickname)
+        event_log.log(
+            "PROFILE_LOOKUP_RESULT", stage="search_done",
+            candidate_count=len(candidates),
+        )
         self.bridge.profile_lookup_ready.emit(candidates)
 
     def start_services(self):
