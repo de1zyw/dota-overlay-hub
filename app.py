@@ -161,8 +161,6 @@ class _MainThreadBridge(QObject):
 
 class OverlayApp:
     def __init__(self):
-        self.qt_app = QApplication(sys.argv)
-        self.qt_app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")))
         self.window = OverlayWindow()
         self.player_stats_window = PlayerStatsWindow()
         self.gsi = GSIServer(config.GSI_HOST, config.GSI_PORT)
@@ -258,7 +256,7 @@ class OverlayApp:
         candidates = search_players(nickname)
         self.bridge.profile_lookup_ready.emit(candidates)
 
-    def run(self):
+    def start_services(self):
         event_log.init()
         event_log.install_exception_hooks()
         event_log.log("APP_START", pid=os.getpid())
@@ -274,8 +272,12 @@ class OverlayApp:
         )
         watcher_thread.start()
 
-        sys.exit(self.qt_app.exec())
+    def run(self):
+        self.start_services()
+        sys.exit(QApplication.instance().exec())
 
 
 if __name__ == "__main__":
+    qt_app = QApplication(sys.argv)
+    qt_app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")))
     OverlayApp().run()
