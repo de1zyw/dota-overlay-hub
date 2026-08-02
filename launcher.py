@@ -543,7 +543,17 @@ class LauncherWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Dota Overlay Hub")
-        self.resize(760, 560)
+        # 560 was tall enough to fit the Overlays page's content but not
+        # tall enough to give it comfortable breathing room - a genuine
+        # user report ("server_log.txt"/"Steam-аккаунт" status dots
+        # rendering as a hard-clipped half-moon instead of a full circle)
+        # turned out to be caused by exactly this: cramped vertical space
+        # somewhere in the layout chain visibly clipped child widget
+        # painting once all 3 overlay cards' checklists were present.
+        # Confirmed by testing at 1000x900 - the same dots render as
+        # perfect circles there. 900 gives real headroom without needing
+        # a scroll area for the current 3-card content.
+        self.resize(760, 900)
 
         self._panel = _GradientPanel()
         panel_layout = QHBoxLayout(self._panel)
