@@ -16,8 +16,10 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QStackedWidget,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -175,9 +177,10 @@ def _check_item(label, status, message):
 
 
 class _OverlayCard(QWidget):
-    def __init__(self, entry):
+    def __init__(self, entry, on_launch):
         super().__init__()
         self._entry = entry
+        self._on_launch_callback = on_launch
         # Scoped to #overlayCard specifically - an unscoped rule here would
         # cascade down to every descendant QWidget (a well-known Qt style
         # sheet gotcha), which is what caused each check row to show its own
@@ -254,8 +257,7 @@ class _OverlayCard(QWidget):
         self._launch_btn.setEnabled(not has_error)
 
     def _on_launch(self):
-        subprocess.Popen([sys.executable, self._entry["entry_script"]], cwd=PROJECT_DIR)
-        QApplication.instance().quit()
+        self._on_launch_callback()
 
 
 class _ComingSoonCard(QWidget):
@@ -290,13 +292,13 @@ class _ComingSoonCard(QWidget):
 
 
 class _OverlaysPage(QWidget):
-    def __init__(self):
+    def __init__(self, on_launch):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
         for entry in OVERLAY_ENTRIES:
-            layout.addWidget(_OverlayCard(entry))
+            layout.addWidget(_OverlayCard(entry, on_launch))
         for entry in COMING_SOON_ENTRIES:
             layout.addWidget(_ComingSoonCard(entry))
         layout.addStretch()
@@ -562,7 +564,8 @@ class LauncherWindow(QWidget):
         content = QWidget()
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(20, 20, 20, 20)
-        self._overlays_page = _OverlaysPage()
+        self._overlay_app = None
+        self._overlays_page = _OverlaysPage(on_launch=self.start_overlay_and_hide)
         self._logs_page = _LogsPage()
         self._settings_page = _SettingsPage()
         self._history_page = _HistoryPage()
@@ -573,6 +576,8 @@ class LauncherWindow(QWidget):
         content_layout.addWidget(self._stack)
         panel_layout.addWidget(content)
 
+        self._setup_tray_icon()
+
     def _switch_page(self, index, nav_buttons):
         self._stack.setCurrentIndex(index)
         for i, btn in enumerate(nav_buttons):
@@ -582,6 +587,40 @@ class LauncherWindow(QWidget):
         elif index == 3:
             self._history_page.refresh()
 
+    def start_overlay_and_hide(self):
+        if self._overlay_app is None:
+            from app import OverlayApp
+            self._overlay_app = OverlayApp()
+            self._overlay_app.start_services()
+        self.hide()
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+
+    def _setup_tray_icon(self):
+        self._tray_icon = QSystemTrayIcon(QIcon(os.path.join(PROJECT_DIR, "icon.png")), self)
+        tray_menu = QMenu()
+        show_action = tray_menu.addAction("Открыть хаб")
+        show_action.triggered.connect(self._show_from_tray)
+        quit_action = tray_menu.addAction("Выйти")
+        quit_action.triggered.connect(QApplication.instance().quit)
+        self._tray_icon.setContextMenu(tray_menu)
+        self._tray_icon.activated.connect(self._on_tray_activated)
+        self._tray_icon.show()
+
+    def _show_from_tray(self):
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            if self.isVisible():
+                self.hide()
+            else:
+                self._show_from_tray()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -590,6 +629,9 @@ if __name__ == "__main__":
     # a generic icon when it can't otherwise correlate the window to it.
     app.setDesktopFileName("dota-overlay-hub")
     app.setWindowIcon(QIcon(os.path.join(PROJECT_DIR, "icon.png")))
+    # This is now a tray-resident app - closing/hiding every window must not
+    # exit the process; only the tray menu's "Выйти" (or Ctrl+C) should.
+    app.setQuitOnLastWindowClosed(False)
     window = LauncherWindow()
     window.show()
     sys.exit(app.exec())
