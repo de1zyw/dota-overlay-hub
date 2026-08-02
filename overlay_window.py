@@ -342,6 +342,13 @@ class OverlayWindow(QWidget):
         self.adjustSize()
 
     def show_overlay(self):
+        # Re-asserted on every show, not just once in __init__ - some
+        # window managers only honor an app-requested position on the
+        # window's first-ever map, then auto-center it (or otherwise
+        # reposition it) on every later show() regardless of move() calls
+        # made while it was hidden. Calling move() again right before
+        # show() forces the position back every time instead of once.
+        self.move(config.WINDOW_MARGIN_PX, config.WINDOW_MARGIN_PX)
         self.show()
 
     def hide_overlay(self):

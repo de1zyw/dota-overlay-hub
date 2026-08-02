@@ -87,6 +87,11 @@ class PlayerStatsWindow(QWidget):
         self.adjustSize()
 
     def show_stats(self):
+        # Re-asserted on every show, not just once in __init__ - see the
+        # matching comment on OverlayWindow.show_overlay (overlay_window.py):
+        # some window managers ignore an app-requested position after the
+        # first map and auto-center on every later show() instead.
+        self.move(config.WINDOW_MARGIN_PX, config.WINDOW_MARGIN_PX)
         self.show()
 
     def hide_stats(self):
