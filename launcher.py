@@ -19,7 +19,6 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
-    QMessageBox,
     QPushButton,
     QStackedWidget,
     QSystemTrayIcon,
@@ -672,7 +671,12 @@ class LauncherWindow(QWidget):
                 # instead of the app just vanishing.
                 self._overlay_app = None
                 return
-        self.hide()
+        # Used to hide() here to tuck the hub away into the tray - but on
+        # DEs where the tray icon doesn't render (common on several Linux
+        # setups), that left no way back to the hub at all. Keep it open;
+        # all 3 overlay cards share this same running process anyway (see
+        # OVERLAY_ENTRIES's comment), so there's nothing left to "launch"
+        # by revisiting other cards - the hub staying open is pure upside.
 
     def closeEvent(self, event):
         event.ignore()
@@ -700,6 +704,18 @@ class LauncherWindow(QWidget):
                 self.hide()
             else:
                 self._show_from_tray()
+
+    def _on_activation_request(self):
+        # Fired when a second `python3 launcher.py` (or desktop-entry
+        # launch) attempt connects to our single-instance socket instead
+        # of starting its own process. On DEs where the tray icon doesn't
+        # render, this is the only way back to a hidden hub window - just
+        # relaunch the app and it raises the existing one instead of
+        # showing a dead-end "already running" message.
+        conn = self._single_instance_server.nextPendingConnection()
+        if conn:
+            conn.disconnectFromServer()
+        self._show_from_tray()
 
 
 _SINGLE_INSTANCE_KEY = "dota-overlay-hub-single-instance"
@@ -736,12 +752,14 @@ if __name__ == "__main__":
 
     single_instance_server = _acquire_single_instance()
     if single_instance_server is None:
-        QMessageBox.information(
-            None, "Dota Overlay Hub",
-            "Приложение уже запущено — смотри иконку в трее.",
-        )
+        # Another instance is already running - the connectToServer() call
+        # inside _acquire_single_instance() just now IS the ping; that
+        # instance's newConnection handler (wired up below) will raise its
+        # window in response. Nothing left to do here.
         sys.exit(0)
 
     window = LauncherWindow()
+    window._single_instance_server = single_instance_server
+    single_instance_server.newConnection.connect(window._on_activation_request)
     window.show()
     sys.exit(app.exec())
