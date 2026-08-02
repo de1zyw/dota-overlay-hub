@@ -35,9 +35,14 @@ from draft_matcher import match_current_picks
 from gsi_server import GSIServer
 from hotkeys import HotkeyListener
 from lobby_watcher import watch_for_new_match
-from opendota_client import fetch_player_stats
+import profile_lookup_history
+import profile_lookup_settings
+from candidate_picker_window import CandidatePickerWindow
+from ocr_capture import capture_region, read_nickname
+from opendota_client import fetch_player_stats, search_players
 from overlay_window import OverlayWindow
-from self_stats_window import SelfStatsWindow
+from player_stats_window import PlayerStatsWindow
+from region_calibrator import RegionCalibrator
 
 
 @dataclass(frozen=True)
@@ -65,16 +70,22 @@ class _MainThreadBridge(QObject):
     toggle_visibility_requested = pyqtSignal()
     expand_requested = pyqtSignal()
     self_stats_ready = pyqtSignal(object)
+    calibrate_requested = pyqtSignal()
+    profile_lookup_ready = pyqtSignal(object)
 
-    def __init__(self, window, hide_timer, self_stats_window):
+    def __init__(self, window, hide_timer, player_stats_window):
         super().__init__()
         self._window = window
         self._hide_timer = hide_timer
-        self._self_stats_window = self_stats_window
+        self._player_stats_window = player_stats_window
+        self._active_calibrator = None
+        self._active_picker = None
         self.new_match_ready.connect(self._on_new_match_ready)
         self.toggle_visibility_requested.connect(self._on_toggle_visibility)
         self.expand_requested.connect(self._on_expand)
         self.self_stats_ready.connect(self._on_self_stats_ready)
+        self.calibrate_requested.connect(self._on_calibrate_requested)
+        self.profile_lookup_ready.connect(self._on_profile_lookup_ready)
 
     def _on_new_match_ready(self, radiant, dire, current_picks, party_account_ids):
         self._window.render_lobby(radiant, dire, current_picks, party_account_ids)
@@ -104,11 +115,47 @@ class _MainThreadBridge(QObject):
         # on_self_stats_hotkey below), including the press that's about to
         # close it - a same-account repeat fetch within 30s is served from
         # opendota_client's own cache, so this is cheap, not wasteful.
-        if self._self_stats_window.isVisible():
-            self._self_stats_window.hide_stats()
+        if self._player_stats_window.isVisible():
+            self._player_stats_window.hide_stats()
         else:
-            self._self_stats_window.render_stats(stats)
-            self._self_stats_window.show_stats()
+            self._player_stats_window.render_stats(stats)
+            self._player_stats_window.show_stats()
+
+    def _on_calibrate_requested(self):
+        event_log.log("HOTKEY", action="calibrate")
+        self._active_calibrator = RegionCalibrator(on_done=self._on_calibration_done)
+
+    def _on_calibration_done(self, region):
+        event_log.log("CALIBRATION_DONE", region=region)
+        self._active_calibrator = None
+
+    def _on_profile_lookup_ready(self, candidates):
+        event_log.log("HOTKEY", action="profile_lookup")
+        if not candidates:
+            self._player_stats_window.render_stats(
+                None, empty_message="Профиль не распознан или не найден на OpenDota"
+            )
+            self._player_stats_window.show_stats()
+            return
+        if len(candidates) == 1:
+            self._show_profile(candidates[0]["account_id"])
+        else:
+            self._active_picker = CandidatePickerWindow(on_selected=self._on_candidate_selected)
+            self._active_picker.show_candidates(candidates)
+
+    def _on_candidate_selected(self, candidate):
+        self._active_picker = None
+        self._show_profile(candidate["account_id"])
+
+    def _show_profile(self, account_id):
+        # Brief main-thread block on this one fetch - acceptable here since
+        # it only runs right after an explicit user action (a hotkey press
+        # that resolved to exactly one match, or a picker click), not on
+        # every poll tick like _poll_picks.
+        stats = fetch_player_stats(account_id)
+        self._player_stats_window.render_stats(stats)
+        self._player_stats_window.show_stats()
+        profile_lookup_history.append(account_id, stats.nickname)
 
 
 class OverlayApp:
@@ -116,19 +163,21 @@ class OverlayApp:
         self.qt_app = QApplication(sys.argv)
         self.qt_app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")))
         self.window = OverlayWindow()
-        self.self_stats_window = SelfStatsWindow()
+        self.player_stats_window = PlayerStatsWindow()
         self.gsi = GSIServer(config.GSI_HOST, config.GSI_PORT)
         self.executor = ThreadPoolExecutor(max_workers=10)
         self.hide_timer = QTimer()
         self.hide_timer.setSingleShot(True)
 
-        self.bridge = _MainThreadBridge(self.window, self.hide_timer, self.self_stats_window)
+        self.bridge = _MainThreadBridge(self.window, self.hide_timer, self.player_stats_window)
         self.hide_timer.timeout.connect(lambda: self.bridge.on_auto_hide())
 
         self.hotkeys = HotkeyListener(
             on_toggle=self.bridge.toggle_visibility_requested.emit,
             on_expand=self.bridge.expand_requested.emit,
             on_self_stats=self.on_self_stats_hotkey,
+            on_calibrate=self.bridge.calibrate_requested.emit,
+            on_profile_lookup=self.on_profile_lookup_hotkey,
         )
 
         # Last-known lobby state, set by on_new_match (background thread) and
@@ -190,6 +239,23 @@ class OverlayApp:
         # happen on the main thread, via the bridge signal below.
         stats = fetch_player_stats(config.MY_ACCOUNT_ID) if config.MY_ACCOUNT_ID else None
         self.bridge.self_stats_ready.emit(stats)
+
+    def on_profile_lookup_hotkey(self):
+        # Runs on pynput's own listener thread - safe to block here on
+        # screen capture, OCR, and the network search call. Only the
+        # actual window show/hide + render must happen on the main
+        # thread, via the bridge signal below.
+        region = profile_lookup_settings.load()
+        if region is None:
+            self.bridge.profile_lookup_ready.emit([])
+            return
+        image = capture_region(region)
+        nickname = read_nickname(image)
+        if not nickname:
+            self.bridge.profile_lookup_ready.emit([])
+            return
+        candidates = search_players(nickname)
+        self.bridge.profile_lookup_ready.emit(candidates)
 
     def run(self):
         event_log.init()
