@@ -21,7 +21,10 @@ def init(log_dir="logs"):
             return
         try:
             os.makedirs(log_dir, exist_ok=True)
-            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            # Millisecond precision, not just seconds - two runs started
+            # within the same second (e.g. a quick restart) would otherwise
+            # collide onto the same filename and silently merge into one log.
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
             path = os.path.join(log_dir, f"run_{ts}.jsonl")
             _file = open(path, "a", encoding="utf-8")
         except OSError:
