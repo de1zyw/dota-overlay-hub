@@ -11,6 +11,13 @@ import re
 
 _DEFAULT = os.path.expanduser("~/.local/share/Steam")
 
+# Manual escape hatch: if auto-detection (registered Steam libraries, then
+# scanning /run/media, /media, /mnt) fails for any reason - e.g. the drive
+# was mounted by root and isn't readable by the current user - drop the
+# exact library folder path (the one containing "steamapps") into this
+# file, one line, no quotes. Checked first, before any auto-detection.
+_OVERRIDE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_library_override.txt")
+
 _STEAM_ROOT_CANDIDATES = (
     "~/.local/share/Steam",
     "~/.steam/steam",
@@ -92,6 +99,12 @@ def find_dota_library():
     partition). Falls back to the old hardcoded default if nothing is
     found anywhere. Never raises."""
     try:
+        if os.path.isfile(_OVERRIDE_FILE):
+            with open(_OVERRIDE_FILE, "r", encoding="utf-8") as f:
+                override = f.read().strip()
+            if override and _has_dota(override):
+                return override
+
         root = _find_steam_root()
 
         if root:
