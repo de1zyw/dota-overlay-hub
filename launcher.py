@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
 
 import config
 import hotkey_settings
-from launcher_checks import CHECKS, STATUS_ERROR, STATUS_OK, STATUS_WARN
+from launcher_checks import CHECKS, SELF_STATS_CHECKS, STATUS_ERROR, STATUS_OK, STATUS_WARN
 from logs_view import list_log_runs
 from overlay_window import _GradientPanel
 
@@ -98,6 +98,9 @@ def _status_dot(status):
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Data-driven so a second overlay is one more entry, no structural change.
+# Личная статистика shares entry_script="app.py" with Драфт-статы - it's
+# the same running process (a hotkey inside app.py), not a separate
+# script, so "Запустить" on either card starts the same thing.
 OVERLAY_ENTRIES = [
     {
         "name": "Драфт-статы",
@@ -105,16 +108,22 @@ OVERLAY_ENTRIES = [
         "checks": CHECKS,
         "entry_script": "app.py",
     },
+    {
+        "name": "Личная статистика",
+        "description": (
+            "Своя стата по горячей клавише "
+            f"({hotkey_settings.load()['self_stats']}, меняется в НАСТРОЙКИ) — "
+            "работает в любой момент, не только на драфте."
+        ),
+        "checks": SELF_STATS_CHECKS,
+        "entry_script": "app.py",
+    },
 ]
 
 # Queued-but-unbuilt features, shown as dimmed placeholder cards so the
 # Overlays page reads as a roadmap instead of leaving empty space below the
-# one real card.
+# real cards.
 COMING_SOON_ENTRIES = [
-    {
-        "name": "Личная статистика",
-        "description": "Своя стата по горячей клавише, без привязки к драфту.",
-    },
     {
         "name": "Профиль по клику",
         "description": "Показ статы того игрока, чей профиль ты открыл прямо в игре.",

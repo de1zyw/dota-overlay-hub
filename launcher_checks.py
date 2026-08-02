@@ -44,10 +44,24 @@ def check_steam_account():
     return STATUS_WARN, "Steam-аккаунт не определён — подсветка «это ты» работать не будет"
 
 
+def check_steam_account_self_stats():
+    if config.MY_ACCOUNT_ID is not None:
+        return STATUS_OK, f"Steam-аккаунт определён (account_id={config.MY_ACCOUNT_ID})"
+    return STATUS_WARN, "Steam-аккаунт не определён — личная стата недоступна"
+
+
 CHECKS = [
     ("Python-зависимости", check_dependencies),
     ("Steam/Dota 2 на диске", check_dota_found),
     ("GSI-конфиг", check_gsi_cfg),
     ("server_log.txt", check_server_log),
     ("Steam-аккаунт", check_steam_account),
+]
+
+# Self-stats only needs the app to run and the local account to be known -
+# it doesn't touch server_log.txt/GSI at all, so it gets its own shorter
+# checklist rather than reusing CHECKS wholesale.
+SELF_STATS_CHECKS = [
+    ("Python-зависимости", check_dependencies),
+    ("Steam-аккаунт", check_steam_account_self_stats),
 ]
