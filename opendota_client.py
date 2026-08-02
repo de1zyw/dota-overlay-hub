@@ -66,6 +66,22 @@ def _cached_get(endpoint, params=None, ttl=30):
     return data
 
 
+def search_players(name):
+    try:
+        results = _cached_get("/search", params={"q": name}, ttl=20) or []
+    except OpenDotaError:
+        return []
+    return [
+        {
+            "account_id": r.get("account_id"),
+            "nickname": r.get("personaname") or f"[{r.get('account_id')}]",
+            "avatar_url": r.get("avatarfull"),
+        }
+        for r in results
+        if r.get("account_id") is not None
+    ][:5]
+
+
 @dataclass
 class PlayerStats:
     account_id: int
