@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -22,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 import config
+import hotkey_settings
 from launcher_checks import CHECKS, STATUS_ERROR, STATUS_OK, STATUS_WARN
 from logs_view import list_log_runs
 from overlay_window import _GradientPanel
@@ -364,6 +366,63 @@ class _LogsPage(QWidget):
             QApplication.clipboard().setText(self._runs[row]["path"])
 
 
+class _SettingsPage(QWidget):
+    _FIELD_LABELS = [
+        ("toggle", "Показать/скрыть"),
+        ("expand", "Свернуть/развернуть"),
+        ("self_stats", "Моя стата"),
+    ]
+
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        title = QLabel("Настройки хоткеев")
+        title.setStyleSheet("color: white; font-weight: bold; font-family: sans-serif; font-size: 14px;")
+        layout.addWidget(title)
+
+        current = hotkey_settings.load()
+        self._fields = {}
+        for key, label_text in self._FIELD_LABELS:
+            row = QHBoxLayout()
+            label = QLabel(label_text)
+            label.setFixedWidth(160)
+            label.setStyleSheet("color: #cccccc; font-family: sans-serif; font-size: 12px;")
+            row.addWidget(label)
+
+            field = QLineEdit(current[key])
+            field.setStyleSheet(
+                "QLineEdit { background-color: rgba(255,255,255,10); color: white; "
+                "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 4px 8px; "
+                "font-family: monospace; font-size: 12px; }"
+            )
+            row.addWidget(field)
+            self._fields[key] = field
+            layout.addLayout(row)
+
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px;")
+        layout.addWidget(self._status_label)
+
+        save_btn = QPushButton("Сохранить")
+        save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.clicked.connect(self._on_save)
+        layout.addWidget(save_btn)
+
+        layout.addStretch()
+
+    def _on_save(self):
+        values = {key: field.text().strip() for key, field in self._fields.items()}
+        ok = hotkey_settings.save(values)
+        if ok:
+            self._status_label.setText("Сохранено — изменения применятся при следующем запуске оверлея")
+        else:
+            self._status_label.setText("Не удалось сохранить настройки")
+
+
 class LauncherWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -405,7 +464,8 @@ class LauncherWindow(QWidget):
         self._stack = QStackedWidget()
         overlays_btn = QPushButton("ОВЕРЛЕИ")
         logs_btn = QPushButton("ЛОГИ")
-        for btn in (overlays_btn, logs_btn):
+        settings_btn = QPushButton("НАСТРОЙКИ")
+        for btn in (overlays_btn, logs_btn, settings_btn):
             btn.setCheckable(True)
             btn.setStyleSheet(
                 "QPushButton { text-align: left; color: #cccccc; background: transparent; "
@@ -413,10 +473,12 @@ class LauncherWindow(QWidget):
                 "QPushButton:checked { color: white; font-weight: bold; }"
             )
         overlays_btn.setChecked(True)
-        overlays_btn.clicked.connect(lambda: self._switch_page(0, overlays_btn, logs_btn))
-        logs_btn.clicked.connect(lambda: self._switch_page(1, overlays_btn, logs_btn))
+        overlays_btn.clicked.connect(lambda: self._switch_page(0, [overlays_btn, logs_btn, settings_btn]))
+        logs_btn.clicked.connect(lambda: self._switch_page(1, [overlays_btn, logs_btn, settings_btn]))
+        settings_btn.clicked.connect(lambda: self._switch_page(2, [overlays_btn, logs_btn, settings_btn]))
         sidebar_layout.addWidget(overlays_btn)
         sidebar_layout.addWidget(logs_btn)
+        sidebar_layout.addWidget(settings_btn)
         sidebar_layout.addStretch()
 
         panel_layout.addWidget(sidebar)
@@ -426,15 +488,17 @@ class LauncherWindow(QWidget):
         content_layout.setContentsMargins(20, 20, 20, 20)
         self._overlays_page = _OverlaysPage()
         self._logs_page = _LogsPage()
+        self._settings_page = _SettingsPage()
         self._stack.addWidget(self._overlays_page)
         self._stack.addWidget(self._logs_page)
+        self._stack.addWidget(self._settings_page)
         content_layout.addWidget(self._stack)
         panel_layout.addWidget(content)
 
-    def _switch_page(self, index, overlays_btn, logs_btn):
+    def _switch_page(self, index, nav_buttons):
         self._stack.setCurrentIndex(index)
-        overlays_btn.setChecked(index == 0)
-        logs_btn.setChecked(index == 1)
+        for i, btn in enumerate(nav_buttons):
+            btn.setChecked(i == index)
         if index == 1:
             self._logs_page.refresh()
 
