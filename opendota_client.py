@@ -1,21 +1,56 @@
 """Thin OpenDota client - throttled, cached, retrying.
 Adapted from ~/dota_stats_bot/opendota_api.py, trimmed to what the overlay needs."""
+import collections
 import random
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import requests
 
 BASE_URL = "https://api.opendota.com/api"
-MIN_REQUEST_INTERVAL = 1.05
+# OpenDota's unauthenticated tier is a per-minute budget (~60/min), not a
+# hard "never less than N seconds apart" rule - the previous flat
+# MIN_REQUEST_INTERVAL=1.05s gate serialized EVERY request globally
+# (regardless of which thread made it), so fetching one player's 4
+# endpoints, let alone a 10-player draft roster's 40, took 1.05s PER
+# REQUEST no matter how much the callers had already parallelized. A
+# sliding 60s window allows a burst up to the real budget, staying under
+# it on average, without punishing a single hotkey press that only needs
+# a handful of requests right now.
+_MAX_REQUESTS_PER_WINDOW = 55
+_WINDOW_SECONDS = 60.0
 MAX_RETRIES = 4
 RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 
-_last_request_at = 0.0
+_request_times = collections.deque()
 _throttle_lock = threading.Lock()
 _cache = {}
 _cache_lock = threading.Lock()
+# Shared connection pool - plain requests.get() opens a fresh TCP+TLS
+# connection per call; reusing a Session lets keep-alive skip that
+# handshake on every request after the first to the same host, which
+# matters a lot once requests are actually running concurrently instead
+# of one-per-second.
+_session = requests.Session()
+# Fetching one player's stats fans out to 4 independent endpoints
+# (profile/wl/recentMatches/heroes) - shared so a draft roster's 10
+# concurrent players don't each spin up their own pool of threads on top
+# of app.py's own per-player executor.
+#
+# Deliberately small, confirmed the hard way: max_workers=40 (matching the
+# theoretical worst case of 10 players x 4 endpoints at once) made a
+# 10-player fetch take 61s - WORSE than the original serial version. A
+# sliding per-minute budget alone wasn't the whole story; OpenDota's free
+# tier also appears to punish an instantaneous burst specifically (lots of
+# near-simultaneous 429s -> every one of them exponential-backing-off).
+# This pool size is the actual concurrency cap, since it's shared across
+# every fetch_player_stats() call regardless of how many players app.py
+# is fetching at once - 6 concurrent requests was fast for a single
+# player (4 requests, well under this cap) and didn't retrigger the burst
+# penalty for a full 10-player roster in testing.
+_endpoint_executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="opendota-endpoint")
 
 
 class OpenDotaError(Exception):
@@ -23,12 +58,16 @@ class OpenDotaError(Exception):
 
 
 def _throttle():
-    global _last_request_at
-    with _throttle_lock:
-        wait = _last_request_at + MIN_REQUEST_INTERVAL - time.time()
-        if wait > 0:
-            time.sleep(wait)
-        _last_request_at = time.time()
+    while True:
+        with _throttle_lock:
+            now = time.time()
+            while _request_times and now - _request_times[0] > _WINDOW_SECONDS:
+                _request_times.popleft()
+            if len(_request_times) < _MAX_REQUESTS_PER_WINDOW:
+                _request_times.append(now)
+                return
+            wait = _WINDOW_SECONDS - (now - _request_times[0]) + 0.05
+        time.sleep(wait)
 
 
 def _get(endpoint, params=None, timeout=(5, 15)):
@@ -36,7 +75,7 @@ def _get(endpoint, params=None, timeout=(5, 15)):
     for attempt in range(MAX_RETRIES):
         _throttle()
         try:
-            resp = requests.get(f"{BASE_URL}{endpoint}", params=params, timeout=timeout)
+            resp = _session.get(f"{BASE_URL}{endpoint}", params=params, timeout=timeout)
         except requests.exceptions.RequestException as e:
             last_error = str(e)
             time.sleep((2 ** attempt) + random.uniform(0, 0.5))
@@ -104,8 +143,19 @@ class PlayerStats:
 def fetch_player_stats(account_id):
     dotabuff_url = f"https://www.dotabuff.com/players/{account_id}"
 
+    # The 4 endpoints below are independent of each other - fired together
+    # instead of one-at-a-time so a single player's stats cost one round
+    # trip's worth of latency, not four. Submitted via the module-level
+    # pool (not awaited yet) so app.py's own per-player ThreadPoolExecutor
+    # (used for a whole draft roster) doesn't end up gated behind this
+    # function running everything serially inside each of its own threads.
+    profile_f = _endpoint_executor.submit(_cached_get, f"/players/{account_id}", None, 30)
+    wl_f = _endpoint_executor.submit(_cached_get, f"/players/{account_id}/wl", None, 30)
+    recent_f = _endpoint_executor.submit(_cached_get, f"/players/{account_id}/recentMatches", None, 20)
+    heroes_f = _endpoint_executor.submit(_cached_get, f"/players/{account_id}/heroes", None, 60)
+
     try:
-        profile = _cached_get(f"/players/{account_id}", ttl=30)
+        profile = profile_f.result()
     except OpenDotaError:
         return PlayerStats(account_id=account_id, nickname=f"[{account_id}]", hidden=True,
                             dotabuff_url=dotabuff_url)
@@ -114,7 +164,7 @@ def fetch_player_stats(account_id):
     nickname = profile_info.get("personaname") or f"[{account_id}]"
 
     try:
-        wl = _cached_get(f"/players/{account_id}/wl", ttl=30)
+        wl = wl_f.result()
     except OpenDotaError:
         wl = {}
     wins, losses = wl.get("win", 0), wl.get("lose", 0)
@@ -123,7 +173,7 @@ def fetch_player_stats(account_id):
     hidden = total_games == 0 and not profile_info.get("personaname")
 
     try:
-        recent = _cached_get(f"/players/{account_id}/recentMatches", ttl=20) or []
+        recent = recent_f.result() or []
     except OpenDotaError:
         recent = []
     recent_matches = [
@@ -132,7 +182,7 @@ def fetch_player_stats(account_id):
     ]
 
     try:
-        heroes = _cached_get(f"/players/{account_id}/heroes", ttl=60) or []
+        heroes = heroes_f.result() or []
     except OpenDotaError:
         heroes = []
     top_heroes = [h["hero_id"] for h in heroes if h.get("games", 0) > 0][:3]

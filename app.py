@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import QApplication
 
 import config
 import event_log
+from assets import prefetch_all_icons
 from draft_matcher import match_current_picks
 from gsi_server import GSIServer
 from hotkeys import HotkeyListener
@@ -295,6 +296,11 @@ class OverlayApp:
             daemon=True,
         )
         watcher_thread.start()
+
+        # Warms the icon cache well before matchmaking could possibly find a
+        # game - see prefetch_all_icons()'s own docstring for why a cold
+        # cache during a real draft would freeze the UI.
+        threading.Thread(target=prefetch_all_icons, daemon=True).start()
 
     def run(self):
         self.start_services()

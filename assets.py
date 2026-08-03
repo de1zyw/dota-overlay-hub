@@ -2,12 +2,17 @@
 CDN URLs (Steam's static CDN for heroes, OpenDota's own asset host for ranks).
 Never raises - a failed download just means no icon for that row, not a crash."""
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
 from opendota_client import _cached_get
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), ".assets_cache")
+# Reused across every icon download (a whole draft roster's worth of hero
+# icons at once, first time any of them is seen) - keep-alive skips a
+# fresh TCP+TLS handshake per icon.
+_session = requests.Session()
 HERO_ICON_BASE = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/icons"
 RANK_ICON_BASE = "https://www.opendota.com/assets/images/dota2/rank_icons"
 # Liquipedia's own asset host (not Steam/OpenDota) - hosts the actual in-game
@@ -40,7 +45,7 @@ def _download(url, dest_path):
     if os.path.exists(dest_path):
         return dest_path
     try:
-        resp = requests.get(url, timeout=10)
+        resp = _session.get(url, timeout=10)
         resp.raise_for_status()
     except requests.exceptions.RequestException:
         return None
@@ -89,3 +94,35 @@ def get_faction_icon_path(team):
         return None
     dest = os.path.join(CACHE_DIR, f"faction_icon_{team}.png")
     return _download(url, dest)
+
+
+def prefetch_all_icons():
+    """Warms the on-disk cache for every icon this app can ever need, so a
+    real draft never has to hit get_hero_icon_path()/get_rank_icon_path()
+    cold. Those are called directly from render_lobby() on the Qt MAIN
+    thread - a cache miss there means _download()'s synchronous network
+    request (up to a 10s timeout) freezes the whole UI, and a fresh
+    install starts with an EMPTY cache, so the very first draft would hit
+    this for every single hero/rank shown. Meant to be kicked off once,
+    from a background thread, at app startup - well before matchmaking
+    could possibly find a game, so it's always long done by the first
+    real draft. Steam's static CDN (heroes) isn't the throttled OpenDota
+    API, so this doesn't compete with real gameplay requests for that
+    budget."""
+    try:
+        heroes = _cached_get("/heroes", ttl=3600 * 24) or []
+    except Exception:
+        heroes = []
+    hero_ids = [h["id"] for h in heroes if h.get("id")]
+
+    # tiers 1-7 x stars 1-5, plus tier 8 (Immortal - one icon, no stars
+    # variant) - every rank_icon_path this app could ever be asked for.
+    rank_tiers = [t * 10 + s for t in range(1, 8) for s in range(1, 6)] + [80]
+
+    jobs = (
+        [(get_hero_icon_path, hero_id) for hero_id in hero_ids]
+        + [(get_rank_icon_path, tier) for tier in rank_tiers]
+        + [(get_faction_icon_path, team) for team in FACTION_ICON_URLS]
+    )
+    with ThreadPoolExecutor(max_workers=16, thread_name_prefix="asset-prefetch") as pool:
+        list(pool.map(lambda job: job[0](job[1]), jobs))
