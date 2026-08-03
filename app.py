@@ -25,9 +25,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from PIL import Image
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
-from PyQt6.QtGui import QGuiApplication, QIcon, QImage
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 import config
@@ -73,7 +72,6 @@ class _MainThreadBridge(QObject):
     self_stats_ready = pyqtSignal(object)
     calibrate_requested = pyqtSignal()
     profile_lookup_ready = pyqtSignal(object)
-    capture_requested = pyqtSignal(dict, object, list)
 
     def __init__(self, window, hide_timer, player_stats_window):
         super().__init__()
@@ -88,7 +86,6 @@ class _MainThreadBridge(QObject):
         self.self_stats_ready.connect(self._on_self_stats_ready)
         self.calibrate_requested.connect(self._on_calibrate_requested)
         self.profile_lookup_ready.connect(self._on_profile_lookup_ready)
-        self.capture_requested.connect(self._on_capture_requested)
 
     def _on_new_match_ready(self, radiant, dire, current_picks, party_account_ids):
         self._window.render_lobby(radiant, dire, current_picks, party_account_ids)
@@ -137,45 +134,6 @@ class _MainThreadBridge(QObject):
     def _on_calibration_done(self, region):
         event_log.log("CALIBRATION_DONE", region=region)
         self._active_calibrator = None
-
-    def _on_capture_requested(self, region, done_event, result_holder):
-        # Runs on the main thread (queued via the signal, same as every
-        # other slot on this bridge) - QGuiApplication/QScreen calls are
-        # not safe from pynput's thread, which is why this exists as a
-        # fallback path instead of just calling grabWindow() directly
-        # from request_capture_via_qt() below.
-        try:
-            screen = QGuiApplication.primaryScreen()
-            if screen is not None:
-                pixmap = screen.grabWindow(
-                    0, region["x"], region["y"], region["width"], region["height"]
-                )
-                if not pixmap.isNull():
-                    qimage = pixmap.toImage().convertToFormat(QImage.Format.Format_RGB888)
-                    ptr = qimage.bits()
-                    ptr.setsize(qimage.height() * qimage.bytesPerLine())
-                    result_holder.append(Image.frombuffer(
-                        "RGB", (qimage.width(), qimage.height()), bytes(ptr),
-                        "raw", "RGB", qimage.bytesPerLine(), 1,
-                    ))
-        except Exception as e:
-            event_log.log("ERROR", where="qt_capture_fallback", exc_type=type(e).__name__, message=str(e))
-        finally:
-            done_event.set()
-
-    def request_capture_via_qt(self, region):
-        """Synchronous, callable from any thread (blocks the CALLING thread,
-        not the Qt main thread) - hands the actual grabWindow() call off to
-        the main thread via the signal above and waits for it to finish.
-        Used as a fallback when mss's raw X11 capture fails outright (the
-        classic cause: a Wayland session, where mss's XGetImage-based
-        approach can't see anything even through XWayland, but Qt's own
-        platform-plugin-based grabWindow() often still can)."""
-        done_event = threading.Event()
-        result_holder = []
-        self.capture_requested.emit(region, done_event, result_holder)
-        done_event.wait(timeout=3.0)
-        return result_holder[0] if result_holder else None
 
     def _on_profile_lookup_ready(self, candidates):
         event_log.log("HOTKEY", action="profile_lookup")
@@ -301,13 +259,6 @@ class OverlayApp:
             self.bridge.profile_lookup_ready.emit([])
             return
         image = capture_region(region)
-        if image is None:
-            # mss (raw X11 XGetImage) failed outright - classic symptom of
-            # a Wayland session, where XGetImage can't see anything even
-            # through XWayland. Qt's own grabWindow() goes through the
-            # platform plugin instead and often still works there.
-            image = self.bridge.request_capture_via_qt(region)
-            event_log.log("QT_CAPTURE_FALLBACK", captured=image is not None)
         # Logged even on success - the raw OCR text is the single most
         # useful piece of evidence when a lookup fails downstream (bad
         # crop, wrong font contrast, wrong language pack all show up

@@ -9,12 +9,26 @@ depends on a compositor being active to blend correctly - without one
 paints solid black instead of see-through, which made the game
 underneath invisible and selection impossible. A static screenshot
 backdrop sidesteps that dependency entirely: it's just a normal opaque
-image, no compositing involved."""
+image, no compositing involved.
+
+The backdrop itself comes from portal_capture.capture_via_portal(), not
+Qt's own QScreen.grabWindow(0) - confirmed live on a real GNOME/Wayland
+session that grabWindow(0) does not return real screen content there
+(empty/placeholder pixmap), while the portal does."""
 from PyQt6.QtCore import QRect, Qt
-from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen
+from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import QWidget
 
 import profile_lookup_settings
+from portal_capture import capture_via_portal
+
+
+def _pil_to_qpixmap(img):
+    if img is None:
+        return None
+    data = img.tobytes("raw", "RGB")
+    qimage = QImage(data, img.width, img.height, img.width * 3, QImage.Format.Format_RGB888)
+    return QPixmap.fromImage(qimage.copy())
 
 
 class RegionCalibrator(QWidget):
@@ -30,11 +44,9 @@ class RegionCalibrator(QWidget):
         self._start = None
         self._current = None
 
-        screen = QGuiApplication.primaryScreen()
         # Grabbed BEFORE showFullScreen() so this window itself isn't in
-        # the shot - grabWindow(0) captures the whole screen's current
-        # framebuffer contents directly, independent of any compositor.
-        self._backdrop = screen.grabWindow(0) if screen else None
+        # the shot.
+        self._backdrop = _pil_to_qpixmap(capture_via_portal())
 
         self.showFullScreen()
 
