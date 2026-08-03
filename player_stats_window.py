@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 import config
+import window_position
 from assets import get_rank_icon_path
 from overlay_window import _GradientPanel, _icon_label, _match_history_group, _winrate_color
 
@@ -35,7 +36,7 @@ class PlayerStatsWindow(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self._panel)
 
-        self.move(config.WINDOW_MARGIN_PX, config.WINDOW_MARGIN_PX)
+        self.move(*window_position.compute(self.width(), self.height()))
 
     def _clear_layout(self):
         while self._layout.count():
@@ -91,7 +92,7 @@ class PlayerStatsWindow(QWidget):
         # matching comment on OverlayWindow.show_overlay (overlay_window.py):
         # some window managers ignore an app-requested position after the
         # first map and auto-center on every later show() instead.
-        self.move(config.WINDOW_MARGIN_PX, config.WINDOW_MARGIN_PX)
+        self.move(*window_position.compute(self.width(), self.height()))
         self.show()
 
     def hide_stats(self):

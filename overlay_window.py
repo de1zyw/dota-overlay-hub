@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 import config
+import window_position
 from assets import get_faction_icon_path, get_hero_icon_path, get_rank_icon_path
 
 ACCENT_PINK = QColor("#FF9CE3")
@@ -280,7 +281,7 @@ class OverlayWindow(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self._panel)
 
-        self.move(config.WINDOW_MARGIN_PX, config.WINDOW_MARGIN_PX)
+        self.move(*window_position.compute(self.width(), self.height()))
 
     def _clear_layout(self):
         while self._layout.count():
@@ -348,7 +349,10 @@ class OverlayWindow(QWidget):
         # reposition it) on every later show() regardless of move() calls
         # made while it was hidden. Calling move() again right before
         # show() forces the position back every time instead of once.
-        self.move(config.WINDOW_MARGIN_PX, config.WINDOW_MARGIN_PX)
+        # Uses the current (already rendered/adjustSize()'d) width/height,
+        # not __init__'s - the user's chosen corner/center can put this
+        # anywhere on screen, so a stale size would visibly misplace it.
+        self.move(*window_position.compute(self.width(), self.height()))
         self.show()
 
     def hide_overlay(self):

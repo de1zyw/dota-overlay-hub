@@ -11,6 +11,7 @@ from PyQt6.QtGui import QColor, QIcon, QPainter
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -20,6 +21,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
+    QRadioButton,
     QStackedWidget,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -28,6 +30,7 @@ from PyQt6.QtWidgets import (
 
 import config
 import hotkey_settings
+import overlay_position_settings
 import profile_lookup_history
 from launcher_checks import CHECKS, PROFILE_LOOKUP_CHECKS, SELF_STATS_CHECKS, STATUS_ERROR, STATUS_OK, STATUS_WARN
 from logs_view import list_log_runs
@@ -477,7 +480,37 @@ class _SettingsPage(QWidget):
         save_btn.clicked.connect(self._on_save)
         layout.addWidget(save_btn)
 
+        position_title = QLabel("Расположение оверлея")
+        position_title.setStyleSheet(
+            "color: white; font-weight: bold; font-family: sans-serif; font-size: 14px; "
+            "margin-top: 12px;"
+        )
+        layout.addWidget(position_title)
+
+        current_position = overlay_position_settings.load()
+        self._position_group = QButtonGroup(self)
+        self._position_status_label = QLabel("")
+        self._position_status_label.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px;")
+        for position in overlay_position_settings.POSITIONS:
+            radio = QRadioButton(overlay_position_settings.POSITION_LABELS[position])
+            radio.setStyleSheet("color: #cccccc; font-family: sans-serif; font-size: 12px;")
+            radio.setChecked(position == current_position)
+            radio.toggled.connect(lambda checked, p=position: self._on_position_toggled(checked, p))
+            self._position_group.addButton(radio)
+            layout.addWidget(radio)
+        layout.addWidget(self._position_status_label)
+
         layout.addStretch()
+
+    def _on_position_toggled(self, checked, position):
+        if not checked:
+            return
+        # Applies live to the next show()/render, no relaunch needed -
+        # unlike hotkeys, which pynput only binds once at startup.
+        ok = overlay_position_settings.save(position)
+        self._position_status_label.setText(
+            "Сохранено — применится при следующем показе оверлея" if ok else "Не удалось сохранить"
+        )
 
     def _on_save(self):
         values = {key: field.text().strip() for key, field in self._fields.items()}
