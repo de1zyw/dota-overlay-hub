@@ -244,6 +244,7 @@ class OverlayApp:
         # docstring) - blocking here on the network fetch is fine, it
         # doesn't freeze the UI. Only the actual show/hide + render must
         # happen on the main thread, via the bridge signal below.
+        event_log.log("HOTKEY", action="self_stats")
         stats = fetch_player_stats(config.MY_ACCOUNT_ID) if config.MY_ACCOUNT_ID else None
         self.bridge.self_stats_ready.emit(stats)
 

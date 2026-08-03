@@ -58,14 +58,35 @@ def _parse_line(line):
     return roster, party_account_ids
 
 
+_TAIL_BYTES = 512_000
+
+
 def parse_latest_match(log_path):
-    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-        lines = f.readlines()
+    # server_log.txt is append-only and grows for as long as the client is
+    # ever used (months/years of matches) - reading the whole file on every
+    # poll (as this used to) gets slower forever. The latest match is always
+    # at the end, and one match's line is a few hundred bytes at most, so a
+    # generous tail read finds it just as reliably without the unbounded
+    # cost. Falls back to a full read only if the tail somehow doesn't
+    # contain a match (e.g. a file smaller than the tail size anyway).
+    file_size = os.path.getsize(log_path)
+    with open(log_path, "rb") as f:
+        if file_size > _TAIL_BYTES:
+            f.seek(file_size - _TAIL_BYTES)
+        data = f.read()
+    lines = data.decode("utf-8", errors="replace").splitlines()
 
     for line in reversed(lines):
         roster, party_account_ids = _parse_line(line)
         if roster:
             return roster, party_account_ids
+
+    if file_size > _TAIL_BYTES:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in reversed(f.readlines()):
+                roster, party_account_ids = _parse_line(line)
+                if roster:
+                    return roster, party_account_ids
     return [], set()
 
 

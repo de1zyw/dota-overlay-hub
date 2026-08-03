@@ -52,9 +52,30 @@ def check_steam_account_self_stats():
 
 
 def check_tesseract():
-    if shutil.which("tesseract"):
-        return STATUS_OK, "tesseract установлен"
-    return STATUS_ERROR, "tesseract не найден — установи: sudo pacman -S tesseract tesseract-data-rus (Arch/CachyOS)"
+    if not shutil.which("tesseract"):
+        return STATUS_ERROR, "tesseract не найден — установи: sudo pacman -S tesseract tesseract-data-rus tesseract-data-eng (Arch/CachyOS)"
+    # ocr_capture.py always reads with lang="rus+eng" - tesseract silently
+    # drops any language it doesn't have data for instead of erroring, so a
+    # missing pack isn't a crash, it's every nickname in that alphabet
+    # coming back as garbled cross-alphabet nonsense (confirmed live: a
+    # real "HelloPlayer123" OCR'd as "нецоРмует 23" with rus-only data) -
+    # a plain "tesseract installed" check would miss this entirely.
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["tesseract", "--list-langs"], capture_output=True, text=True, timeout=5,
+        )
+        installed = set(result.stdout.strip().splitlines()[1:])
+    except (OSError, subprocess.SubprocessError):
+        return STATUS_WARN, "tesseract найден, но не удалось проверить установленные языки"
+    missing = {"rus", "eng"} - installed
+    if missing:
+        return STATUS_WARN, (
+            f"tesseract установлен, но не хватает языковых пакетов: {', '.join(sorted(missing))} "
+            f"— установи: sudo pacman -S {' '.join(f'tesseract-data-{m}' for m in sorted(missing))} "
+            "(иначе OCR будет читать эти буквы как другой алфавит, без явной ошибки)"
+        )
+    return STATUS_OK, "tesseract установлен (rus+eng)"
 
 
 def check_region_calibrated():

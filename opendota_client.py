@@ -48,9 +48,15 @@ def _get(endpoint, params=None, timeout=(5, 15)):
                 continue
         try:
             resp.raise_for_status()
+            return resp.json()
         except requests.exceptions.RequestException as e:
             raise OpenDotaError(f"OpenDota request failed: {e}")
-        return resp.json()
+        except ValueError as e:
+            # resp.json() on a 200 with a malformed/non-JSON body (CDN
+            # error page, truncated response under rate-limit, etc.) - a
+            # JSONDecodeError here used to escape this function entirely,
+            # bypassing every caller's OpenDotaError->empty-result fallback.
+            raise OpenDotaError(f"OpenDota returned invalid JSON: {e}")
     raise OpenDotaError(f"OpenDota unreachable after {MAX_RETRIES} attempts ({last_error})")
 
 

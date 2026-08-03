@@ -44,10 +44,18 @@ def _download(url, dest_path):
         resp.raise_for_status()
     except requests.exceptions.RequestException:
         return None
+    # Written to a temp path and renamed into place atomically - a
+    # connection drop or full disk mid-write used to leave a partial file
+    # at dest_path, which the exists() check above would then treat as
+    # permanently cached and never retry.
+    tmp_path = f"{dest_path}.tmp{os.getpid()}"
     try:
-        with open(dest_path, "wb") as f:
+        with open(tmp_path, "wb") as f:
             f.write(resp.content)
+        os.replace(tmp_path, dest_path)
     except OSError:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
         return None
     return dest_path
 
