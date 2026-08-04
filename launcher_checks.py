@@ -13,6 +13,7 @@ import shutil
 import socket
 
 import config
+import error_codes
 
 # Deliberately short and independent of opendota_client.py's own
 # throttle/retry machinery (which can legitimately take up to ~30s working
@@ -28,7 +29,11 @@ STATUS_ERROR = "error"
 def check_dependencies():
     missing = [m for m in ("PyQt6", "requests", "pynput") if importlib.util.find_spec(m) is None]
     if missing:
-        return STATUS_ERROR, f"Не установлены зависимости: {', '.join(missing)} (pip install -r requirements.txt --break-system-packages)"
+        return STATUS_ERROR, (
+            f"Не установлены зависимости: {', '.join(missing)} "
+            f"(pip install -r requirements.txt --break-system-packages) "
+            f"{error_codes.tag(error_codes.MISSING_DEPENDENCY)}"
+        )
     return STATUS_OK, "Все зависимости установлены"
 
 
@@ -42,10 +47,10 @@ def check_dns():
     except socket.gaierror as e:
         return STATUS_ERROR, (
             f"DNS не резолвит api.opendota.com — похоже, нет интернета или сломан DNS "
-            f"на этой машине ({e})"
+            f"на этой машине ({e}) {error_codes.tag(error_codes.DNS_FAILURE)}"
         )
     except OSError as e:
-        return STATUS_WARN, f"Не удалось проверить DNS ({e})"
+        return STATUS_WARN, f"Не удалось проверить DNS ({e}) {error_codes.tag(error_codes.DNS_FAILURE)}"
     return STATUS_OK, "DNS резолвит OpenDota"
 
 
@@ -63,21 +68,27 @@ def check_opendota_reachable():
         # completely the wrong place (their network, not their clock).
         return STATUS_ERROR, (
             f"TLS-ошибка при подключении к OpenDota — часто это неправильные "
-            f"дата/время на машине, проверь их ({e})"
+            f"дата/время на машине, проверь их ({e}) {error_codes.tag(error_codes.TLS_ERROR)}"
         )
     except requests.exceptions.ConnectionError as e:
-        return STATUS_ERROR, f"Не удаётся подключиться к OpenDota (сеть или фаервол блокирует) — {e}"
+        return STATUS_ERROR, (
+            f"Не удаётся подключиться к OpenDota (сеть или фаервол блокирует) — {e} "
+            f"{error_codes.tag(error_codes.CONNECTION_ERROR)}"
+        )
     except requests.exceptions.Timeout:
-        return STATUS_WARN, f"OpenDota не ответил за {_NETWORK_TIMEOUT_S}с — сервис перегружен, не наша проблема"
+        return STATUS_WARN, (
+            f"OpenDota не ответил за {_NETWORK_TIMEOUT_S}с — сервис перегружен, не наша проблема "
+            f"{error_codes.tag(error_codes.TIMEOUT)}"
+        )
     except requests.exceptions.RequestException as e:
-        return STATUS_ERROR, f"Ошибка запроса к OpenDota — {e}"
+        return STATUS_ERROR, f"Ошибка запроса к OpenDota — {e} {error_codes.tag(error_codes.CONNECTION_ERROR)}"
 
     if resp.status_code == 429:
-        return STATUS_WARN, "OpenDota сейчас лимитирует запросы (HTTP 429) — попробуй через минуту"
+        return STATUS_WARN, f"OpenDota сейчас лимитирует запросы — попробуй через минуту {error_codes.http_tag(429)}"
     if resp.status_code >= 500:
-        return STATUS_WARN, f"OpenDota вернул ошибку сервера (HTTP {resp.status_code}) — не наша проблема, попробуй позже"
+        return STATUS_WARN, f"OpenDota вернул ошибку сервера — не наша проблема, попробуй позже {error_codes.http_tag(resp.status_code)}"
     if resp.status_code >= 400:
-        return STATUS_WARN, f"OpenDota вернул неожиданный код HTTP {resp.status_code}"
+        return STATUS_WARN, f"OpenDota вернул неожиданный код {error_codes.http_tag(resp.status_code)}"
     return STATUS_OK, "OpenDota API отвечает"
 
 
@@ -93,7 +104,8 @@ def check_gsi_port_free():
     except OSError:
         return STATUS_WARN, (
             f"Порт {config.GSI_PORT} уже занят — если это не уже запущенный оверлей, "
-            "live-подсветка текущего пика работать не будет, пока порт не освободится"
+            "live-подсветка текущего пика работать не будет, пока порт не освободится "
+            f"{error_codes.tag(error_codes.GSI_PORT_BUSY)}"
         )
     finally:
         s.close()
@@ -107,7 +119,10 @@ def check_portal_available():
     # the moment the user actually triggers a lookup, not a background
     # health check.
     if importlib.util.find_spec("gi") is None:
-        return STATUS_ERROR, "python-gi не установлен — установи: sudo pacman -S python-gobject (нужен для скриншотов на Wayland)"
+        return STATUS_ERROR, (
+            "python-gi не установлен — установи: sudo pacman -S python-gobject (нужен для скриншотов на Wayland) "
+            f"{error_codes.tag(error_codes.PORTAL_UNAVAILABLE)}"
+        )
     try:
         import gi
         gi.require_version("GLib", "2.0")
@@ -121,11 +136,15 @@ def check_portal_available():
         )
         has_owner = variant.unpack()[0]
     except Exception as e:
-        return STATUS_WARN, f"Не удалось проверить XDG portal — {type(e).__name__}: {e}"
+        return STATUS_WARN, (
+            f"Не удалось проверить XDG portal — {type(e).__name__}: {e} "
+            f"{error_codes.tag(error_codes.PORTAL_UNAVAILABLE)}"
+        )
     if not has_owner:
         return STATUS_ERROR, (
             "XDG Desktop Portal не запущен — скриншоты для OCR работать не будут "
-            "(нужен xdg-desktop-portal + бэкенд для твоего DE, напр. xdg-desktop-portal-gnome)"
+            "(нужен xdg-desktop-portal + бэкенд для твоего DE, напр. xdg-desktop-portal-gnome) "
+            f"{error_codes.tag(error_codes.PORTAL_UNAVAILABLE)}"
         )
     return STATUS_OK, "XDG portal доступен"
 
@@ -134,37 +153,51 @@ def check_dota_found():
     dota_dir = os.path.dirname(config.SERVER_LOG_PATH)
     if os.path.isdir(dota_dir):
         return STATUS_OK, "Dota 2 найдена"
-    return STATUS_WARN, f"Папка Dota 2 не найдена: {dota_dir}"
+    return STATUS_WARN, f"Папка Dota 2 не найдена: {dota_dir} {error_codes.tag(error_codes.DOTA_DIR_MISSING)}"
 
 
 def check_gsi_cfg():
     cfg_path = os.path.join(config.GSI_CFG_DIR, "gamestate_integration_dota_overlay.cfg")
     if os.path.isfile(cfg_path):
         return STATUS_OK, "GSI-конфиг установлен"
-    return STATUS_WARN, f"GSI-конфиг не найден в {config.GSI_CFG_DIR} — скопируй gamestate_integration_dota_overlay.cfg туда (live-пик работать не будет, остальная стата — будет)"
+    return STATUS_WARN, (
+        f"GSI-конфиг не найден в {config.GSI_CFG_DIR} — скопируй gamestate_integration_dota_overlay.cfg туда "
+        f"(live-пик работать не будет, остальная стата — будет) {error_codes.tag(error_codes.GSI_CFG_MISSING)}"
+    )
 
 
 def check_server_log():
     if os.path.isfile(config.SERVER_LOG_PATH):
         return STATUS_OK, "server_log.txt найден"
-    return STATUS_WARN, "server_log.txt ещё не создан — появится после первого принятого матча"
+    return STATUS_WARN, (
+        f"server_log.txt ещё не создан — появится после первого принятого матча "
+        f"{error_codes.tag(error_codes.SERVER_LOG_MISSING)}"
+    )
 
 
 def check_steam_account():
     if config.MY_ACCOUNT_ID is not None:
         return STATUS_OK, f"Steam-аккаунт определён (account_id={config.MY_ACCOUNT_ID})"
-    return STATUS_WARN, "Steam-аккаунт не определён — подсветка «это ты» работать не будет"
+    return STATUS_WARN, (
+        f"Steam-аккаунт не определён — подсветка «это ты» работать не будет "
+        f"{error_codes.tag(error_codes.STEAM_ACCOUNT_UNKNOWN)}"
+    )
 
 
 def check_steam_account_self_stats():
     if config.MY_ACCOUNT_ID is not None:
         return STATUS_OK, f"Steam-аккаунт определён (account_id={config.MY_ACCOUNT_ID})"
-    return STATUS_WARN, "Steam-аккаунт не определён — личная стата недоступна"
+    return STATUS_WARN, (
+        f"Steam-аккаунт не определён — личная стата недоступна {error_codes.tag(error_codes.STEAM_ACCOUNT_UNKNOWN)}"
+    )
 
 
 def check_tesseract():
     if not shutil.which("tesseract"):
-        return STATUS_ERROR, "tesseract не найден — установи: sudo pacman -S tesseract tesseract-data-rus tesseract-data-eng (Arch/CachyOS)"
+        return STATUS_ERROR, (
+            "tesseract не найден — установи: sudo pacman -S tesseract tesseract-data-rus tesseract-data-eng (Arch/CachyOS) "
+            f"{error_codes.tag(error_codes.TESSERACT_MISSING)}"
+        )
     # ocr_capture.py always reads with lang="rus+eng" - tesseract silently
     # drops any language it doesn't have data for instead of erroring, so a
     # missing pack isn't a crash, it's every nickname in that alphabet
@@ -178,13 +211,17 @@ def check_tesseract():
         )
         installed = set(result.stdout.strip().splitlines()[1:])
     except (OSError, subprocess.SubprocessError):
-        return STATUS_WARN, "tesseract найден, но не удалось проверить установленные языки"
+        return STATUS_WARN, (
+            f"tesseract найден, но не удалось проверить установленные языки "
+            f"{error_codes.tag(error_codes.TESSERACT_LANG_MISSING)}"
+        )
     missing = {"rus", "eng"} - installed
     if missing:
         return STATUS_WARN, (
             f"tesseract установлен, но не хватает языковых пакетов: {', '.join(sorted(missing))} "
             f"— установи: sudo pacman -S {' '.join(f'tesseract-data-{m}' for m in sorted(missing))} "
-            "(иначе OCR будет читать эти буквы как другой алфавит, без явной ошибки)"
+            f"(иначе OCR будет читать эти буквы как другой алфавит, без явной ошибки) "
+            f"{error_codes.tag(error_codes.TESSERACT_LANG_MISSING)}"
         )
     return STATUS_OK, "tesseract установлен (rus+eng)"
 
@@ -193,7 +230,10 @@ def check_region_calibrated():
     import profile_lookup_settings
     if profile_lookup_settings.load() is not None:
         return STATUS_OK, "Область экрана откалибрована"
-    return STATUS_WARN, f"Область экрана не откалибрована — открой профиль в Доте и нажми {config.HOTKEY_CALIBRATE}"
+    return STATUS_WARN, (
+        f"Область экрана не откалибрована — открой профиль в Доте и нажми {config.HOTKEY_CALIBRATE} "
+        f"{error_codes.tag(error_codes.REGION_NOT_CALIBRATED)}"
+    )
 
 
 CHECKS = [

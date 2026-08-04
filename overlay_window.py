@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 import config
+import error_codes
 import window_position
 from assets import get_faction_icon_path, get_hero_icon_path, get_rank_icon_path
 
@@ -222,7 +223,14 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
         # genuinely private profile so the row doesn't read as "this
         # player is hiding something" when it's actually just our data
         # source being briefly down.
-        suffix = "OpenDota недоступен" if stats.error_reason else "профиль скрыт"
+        if stats.error_reason:
+            code = stats.error_code
+            code_tag = (
+                error_codes.http_tag(code) if code in range(100, 600) else error_codes.tag(code)
+            ) if code is not None else ""
+            suffix = f"OpenDota недоступен {code_tag}".strip()
+        else:
+            suffix = "профиль скрыт"
         label = QLabel(f"{stats.nickname} — {suffix}")
         label.setStyleSheet("color: #888899; font-family: sans-serif; font-size: 13px;")
         # Fixed to the same height as the icon-bearing rows below (driven by

@@ -9,6 +9,8 @@ from dataclasses import dataclass, field, replace
 
 import requests
 
+import error_codes
+
 BASE_URL = "https://api.opendota.com/api"
 # OpenDota's unauthenticated tier is a per-minute budget (~60/min), not a
 # hard "never less than N seconds apart" rule - the previous flat
@@ -68,11 +70,16 @@ class OpenDotaError(Exception):
     (OpenDota 5xx - their outage, not ours), "invalid_json" (malformed
     body), or "http_error" (any other non-2xx, e.g. a genuine 404). Callers
     use this to show a message that matches what's actually wrong instead
-    of one generic "unavailable" for every case."""
+    of one generic "unavailable" for every case.
 
-    def __init__(self, message, reason="http_error"):
+    code is the real HTTP status (e.g. 429, 503) when OpenDota actually
+    responded, or one of error_codes.py's own hex codes when it never got
+    that far (DNS/connection/timeout/malformed body)."""
+
+    def __init__(self, message, reason="http_error", code=None):
         super().__init__(message)
         self.reason = reason
+        self.code = code
 
 
 def _throttle():
@@ -91,18 +98,23 @@ def _throttle():
 def _get(endpoint, params=None, timeout=(5, 15)):
     last_error = "unknown error"
     last_reason = "network"
+    last_code = error_codes.CONNECTION_ERROR
     for attempt in range(MAX_RETRIES):
         _throttle()
         try:
             resp = _session.get(f"{BASE_URL}{endpoint}", params=params, timeout=timeout)
+        except requests.exceptions.Timeout as e:
+            last_error, last_reason, last_code = str(e), "network", error_codes.TIMEOUT
+            time.sleep((2 ** attempt) + random.uniform(0, 0.5))
+            continue
         except requests.exceptions.RequestException as e:
-            last_error = str(e)
-            last_reason = "network"
+            last_error, last_reason, last_code = str(e), "network", error_codes.CONNECTION_ERROR
             time.sleep((2 ** attempt) + random.uniform(0, 0.5))
             continue
         if resp.status_code in RETRYABLE_STATUSES:
             last_error = f"HTTP {resp.status_code}"
             last_reason = "rate_limited" if resp.status_code == 429 else "server_error"
+            last_code = resp.status_code
             if attempt < MAX_RETRIES - 1:
                 time.sleep((2 ** attempt) + random.uniform(0, 0.5))
                 continue
@@ -110,14 +122,16 @@ def _get(endpoint, params=None, timeout=(5, 15)):
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.RequestException as e:
-            raise OpenDotaError(f"OpenDota request failed: {e}", reason=last_reason)
+            raise OpenDotaError(f"OpenDota request failed: {e}", reason=last_reason, code=resp.status_code)
         except ValueError as e:
             # resp.json() on a 200 with a malformed/non-JSON body (CDN
             # error page, truncated response under rate-limit, etc.) - a
             # JSONDecodeError here used to escape this function entirely,
             # bypassing every caller's OpenDotaError->empty-result fallback.
-            raise OpenDotaError(f"OpenDota returned invalid JSON: {e}", reason="invalid_json")
-    raise OpenDotaError(f"OpenDota unreachable after {MAX_RETRIES} attempts ({last_error})", reason=last_reason)
+            raise OpenDotaError(f"OpenDota returned invalid JSON: {e}", reason="invalid_json", code=error_codes.INVALID_JSON)
+    raise OpenDotaError(
+        f"OpenDota unreachable after {MAX_RETRIES} attempts ({last_error})", reason=last_reason, code=last_code
+    )
 
 
 def _cached_get(endpoint, params=None, ttl=30):
@@ -167,6 +181,10 @@ class PlayerStats:
     # genuinely private/unindexed profile (None means the latter - no error
     # occurred, OpenDota just has nothing to give).
     error_reason: str = None
+    # The real HTTP status (e.g. 429) when OpenDota responded, or one of
+    # error_codes.py's own hex codes when it never got that far - shown
+    # alongside error_reason's human message for exact bug-report-ability.
+    error_code: int = None
     # True when this is a fallback: the live fetch failed but a previous
     # successful fetch for this account_id was reused instead of showing
     # nothing. stale_fetched_at is a time.time() timestamp for computing
@@ -198,7 +216,7 @@ def fetch_player_stats(account_id):
             fetched_at, stale_stats = fallback
             return replace(stale_stats, stale=True, stale_fetched_at=fetched_at)
         return PlayerStats(account_id=account_id, nickname=f"[{account_id}]", hidden=True,
-                            dotabuff_url=dotabuff_url, error_reason=e.reason)
+                            dotabuff_url=dotabuff_url, error_reason=e.reason, error_code=e.code)
 
     profile_info = profile.get("profile") or {}
     nickname = profile_info.get("personaname") or f"[{account_id}]"

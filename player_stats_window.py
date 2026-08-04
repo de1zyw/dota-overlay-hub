@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 import config
+import error_codes
 import window_position
 from assets import get_rank_icon_path
 from overlay_window import _GradientPanel, _icon_label, _match_history_group, _winrate_color
@@ -72,7 +73,15 @@ class PlayerStatsWindow(QWidget):
             return
 
         if stats.hidden:
-            msg = QLabel(_ERROR_REASON_MESSAGES.get(stats.error_reason, _DEFAULT_HIDDEN_MESSAGE))
+            text = _ERROR_REASON_MESSAGES.get(stats.error_reason, _DEFAULT_HIDDEN_MESSAGE)
+            if stats.error_code is not None:
+                code_tag = (
+                    error_codes.http_tag(stats.error_code)
+                    if stats.error_code in range(100, 600)
+                    else error_codes.tag(stats.error_code)
+                )
+                text += f" {code_tag}"
+            msg = QLabel(text)
             msg.setWordWrap(True)
             msg.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 13px;")
             self._layout.addWidget(msg)

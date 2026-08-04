@@ -30,6 +30,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 import config
+import error_codes
 import event_log
 from assets import prefetch_all_icons
 from draft_matcher import match_current_picks
@@ -50,14 +51,14 @@ from region_calibrator import RegionCalibrator
 # found" that looks identical whether OCR read garbage, the region was
 # never calibrated, or OpenDota itself is just down right now.
 _LOOKUP_REASON_MESSAGES = {
-    "no_region": "Область экрана для OCR не откалибрована — открой хаб → Калибровка",
+    "no_region": f"Область экрана для OCR не откалибрована — открой хаб → Калибровка {error_codes.tag(error_codes.REGION_NOT_CALIBRATED)}",
     "capture_failed": (
         "Не удалось сделать скриншот региона — проверь, что в системных "
-        "настройках разрешены скриншоты приложениям"
+        f"настройках разрешены скриншоты приложениям {error_codes.tag(error_codes.CAPTURE_FAILED)}"
     ),
-    "ocr_empty": "Не удалось распознать ник в этой области — попробуй перекалибровать регион",
-    "opendota_error": "OpenDota сейчас недоступен — попробуй ещё раз через минуту",
-    "not_found": "Игрок с таким ником не найден на OpenDota",
+    "ocr_empty": f"Не удалось распознать ник в этой области — попробуй перекалибровать регион {error_codes.tag(error_codes.OCR_EMPTY)}",
+    "opendota_error": f"OpenDota сейчас недоступен — попробуй ещё раз через минуту {error_codes.tag(error_codes.CONNECTION_ERROR)}",
+    "not_found": f"Игрок с таким ником не найден на OpenDota {error_codes.tag(error_codes.PROFILE_NOT_FOUND)}",
 }
 
 
