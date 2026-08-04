@@ -1,11 +1,24 @@
 """Pure pre-launch environment checks for launcher.py - no Qt dependency,
 so they can be run/verified directly from a plain interpreter. Report-only:
-each check just returns a severity + message, never modifies anything."""
+each check just returns a severity + message, never modifies anything.
+
+Checks are ordered machine -> network -> Dota, matching the real failure
+chain: a dependency missing on THIS machine, then no route to the
+internet/OpenDota specifically, then Dota's own files/config. Each layer
+gets its own check so a failure points at the actual broken link instead of
+one generic "stats didn't load"."""
 import importlib.util
 import os
 import shutil
+import socket
 
 import config
+
+# Deliberately short and independent of opendota_client.py's own
+# throttle/retry machinery (which can legitimately take up to ~30s working
+# through 4 retries with backoff) - a pre-flight check should fail fast, not
+# make the user wait through a retry budget meant for a live match fetch.
+_NETWORK_TIMEOUT_S = 5
 
 STATUS_OK = "ok"
 STATUS_WARN = "warn"
@@ -17,6 +30,104 @@ def check_dependencies():
     if missing:
         return STATUS_ERROR, f"Не установлены зависимости: {', '.join(missing)} (pip install -r requirements.txt --break-system-packages)"
     return STATUS_OK, "Все зависимости установлены"
+
+
+def check_dns():
+    # Isolates DNS specifically from every other way a network call can
+    # fail below - "DNS не резолвит" and "сервер не отвечает" point at
+    # completely different fixes (router/DNS settings vs. a firewall or
+    # OpenDota itself being down), so they can't share one message.
+    try:
+        socket.getaddrinfo("api.opendota.com", 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        return STATUS_ERROR, (
+            f"DNS не резолвит api.opendota.com — похоже, нет интернета или сломан DNS "
+            f"на этой машине ({e})"
+        )
+    except OSError as e:
+        return STATUS_WARN, f"Не удалось проверить DNS ({e})"
+    return STATUS_OK, "DNS резолвит OpenDota"
+
+
+def check_opendota_reachable():
+    import requests
+
+    try:
+        resp = requests.get(
+            "https://api.opendota.com/api/heroes", timeout=_NETWORK_TIMEOUT_S
+        )
+    except requests.exceptions.SSLError as e:
+        # The classic sneaky cause here is a wrong system clock (TLS cert
+        # validation fails if the machine's date is off) - worth naming
+        # explicitly since "SSL error" alone sends most people looking in
+        # completely the wrong place (their network, not their clock).
+        return STATUS_ERROR, (
+            f"TLS-ошибка при подключении к OpenDota — часто это неправильные "
+            f"дата/время на машине, проверь их ({e})"
+        )
+    except requests.exceptions.ConnectionError as e:
+        return STATUS_ERROR, f"Не удаётся подключиться к OpenDota (сеть или фаервол блокирует) — {e}"
+    except requests.exceptions.Timeout:
+        return STATUS_WARN, f"OpenDota не ответил за {_NETWORK_TIMEOUT_S}с — сервис перегружен, не наша проблема"
+    except requests.exceptions.RequestException as e:
+        return STATUS_ERROR, f"Ошибка запроса к OpenDota — {e}"
+
+    if resp.status_code == 429:
+        return STATUS_WARN, "OpenDota сейчас лимитирует запросы (HTTP 429) — попробуй через минуту"
+    if resp.status_code >= 500:
+        return STATUS_WARN, f"OpenDota вернул ошибку сервера (HTTP {resp.status_code}) — не наша проблема, попробуй позже"
+    if resp.status_code >= 400:
+        return STATUS_WARN, f"OpenDota вернул неожиданный код HTTP {resp.status_code}"
+    return STATUS_OK, "OpenDota API отвечает"
+
+
+def check_gsi_port_free():
+    # A bound-but-refused port here almost always means the overlay itself
+    # is already running (it holds this port for as long as it's alive) -
+    # worded as a maybe, not a definite problem, since that's the common
+    # and harmless case.
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(1)
+    try:
+        s.bind((config.GSI_HOST, config.GSI_PORT))
+    except OSError:
+        return STATUS_WARN, (
+            f"Порт {config.GSI_PORT} уже занят — если это не уже запущенный оверлей, "
+            "live-подсветка текущего пика работать не будет, пока порт не освободится"
+        )
+    finally:
+        s.close()
+    return STATUS_OK, f"Порт {config.GSI_PORT} для GSI свободен"
+
+
+def check_portal_available():
+    # Confirms the mechanism OCR screenshots depend on (portal_capture.py)
+    # is even present, without actually calling Screenshot() here - that
+    # would pop the real permission dialog at check-time, which belongs to
+    # the moment the user actually triggers a lookup, not a background
+    # health check.
+    if importlib.util.find_spec("gi") is None:
+        return STATUS_ERROR, "python-gi не установлен — установи: sudo pacman -S python-gobject (нужен для скриншотов на Wayland)"
+    try:
+        import gi
+        gi.require_version("GLib", "2.0")
+        from gi.repository import Gio, GLib
+
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        variant = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "NameHasOwner", GLib.Variant("(s)", ("org.freedesktop.portal.Desktop",)),
+            GLib.VariantType("(b)"), Gio.DBusCallFlags.NONE, 2000, None,
+        )
+        has_owner = variant.unpack()[0]
+    except Exception as e:
+        return STATUS_WARN, f"Не удалось проверить XDG portal — {type(e).__name__}: {e}"
+    if not has_owner:
+        return STATUS_ERROR, (
+            "XDG Desktop Portal не запущен — скриншоты для OCR работать не будут "
+            "(нужен xdg-desktop-portal + бэкенд для твоего DE, напр. xdg-desktop-portal-gnome)"
+        )
+    return STATUS_OK, "XDG portal доступен"
 
 
 def check_dota_found():
@@ -87,22 +198,32 @@ def check_region_calibrated():
 
 CHECKS = [
     ("Python-зависимости", check_dependencies),
+    ("DNS", check_dns),
+    ("OpenDota API", check_opendota_reachable),
     ("Steam/Dota 2 на диске", check_dota_found),
     ("GSI-конфиг", check_gsi_cfg),
+    ("GSI-порт", check_gsi_port_free),
     ("server_log.txt", check_server_log),
     ("Steam-аккаунт", check_steam_account),
 ]
 
 # Self-stats only needs the app to run and the local account to be known -
 # it doesn't touch server_log.txt/GSI at all, so it gets its own shorter
-# checklist rather than reusing CHECKS wholesale.
+# checklist rather than reusing CHECKS wholesale. It DOES need OpenDota
+# though (that's the entire point of the feature), so the network layer
+# stays here.
 SELF_STATS_CHECKS = [
     ("Python-зависимости", check_dependencies),
+    ("DNS", check_dns),
+    ("OpenDota API", check_opendota_reachable),
     ("Steam-аккаунт", check_steam_account_self_stats),
 ]
 
 PROFILE_LOOKUP_CHECKS = [
     ("Python-зависимости", check_dependencies),
+    ("XDG portal (скриншоты)", check_portal_available),
     ("tesseract", check_tesseract),
     ("Область экрана", check_region_calibrated),
+    ("DNS", check_dns),
+    ("OpenDota API", check_opendota_reachable),
 ]
