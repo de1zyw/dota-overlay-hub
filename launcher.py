@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QStackedWidget,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -106,7 +107,7 @@ class _StatusDot(QWidget):
     A self-painting widget can't be clipped this way: paintEvent always
     draws an ellipse inscribed in whatever rect the widget actually has."""
 
-    _SIZE = 12
+    _SIZE = 18
 
     def __init__(self, status):
         super().__init__()
@@ -578,17 +579,20 @@ class LauncherWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Dota Overlay Hub")
-        # 560 was tall enough to fit the Overlays page's content but not
-        # tall enough to give it comfortable breathing room - a genuine
-        # user report ("server_log.txt"/"Steam-аккаунт" status dots
-        # rendering as a hard-clipped half-moon instead of a full circle)
-        # turned out to be caused by exactly this: cramped vertical space
-        # somewhere in the layout chain visibly clipped child widget
-        # painting once all 3 overlay cards' checklists were present.
-        # Confirmed by testing at 1000x900 - the same dots render as
-        # perfect circles there. 900 gives real headroom without needing
-        # a scroll area for the current 3-card content.
-        self.resize(760, 900)
+        # This has broken twice now, both times as "status dots render as a
+        # hard-clipped half-moon instead of a full circle" - and both times
+        # the real cause was WIDTH, not height, despite how it looks: too
+        # narrow a window wraps the longer warning/error lines onto extra
+        # rows, and _StatusDot's fixed size gets compressed along with
+        # everything else once the layout can't fit every row's true
+        # preferred height. A QScrollArea around the Overlays page (below)
+        # only helps once rows stop being squeezed in the first place - it
+        # can't rescue a widget that already reported a shrunk size. 1200
+        # confirmed wide enough for every check message's current length
+        # (including the [0x1234]-style codes in error_codes.py, which push
+        # several of these lines close to wrapping); 760 keeps the window
+        # inside a 1280x800 screen with room to spare.
+        self.resize(1200, 760)
 
         self._panel = _GradientPanel()
         panel_layout = QHBoxLayout(self._panel)
@@ -653,10 +657,22 @@ class LauncherWindow(QWidget):
         content_layout.setContentsMargins(20, 20, 20, 20)
         self._overlay_app = None
         self._overlays_page = _OverlaysPage(on_launch=self.start_overlay_and_hide)
+        # Scrolls instead of relying on the window being tall enough to fit
+        # every check for every card - the previous fix for this exact bug
+        # (dots painting as a hard-clipped half-moon under cramped vertical
+        # space) was just resizing the window to a height that happened to
+        # fit the checklists that existed at the time. Every check added
+        # since then re-shrinks that margin; a scroll area can't run out of
+        # room no matter how many checks a future card ends up with.
+        overlays_scroll = QScrollArea()
+        overlays_scroll.setWidget(self._overlays_page)
+        overlays_scroll.setWidgetResizable(True)
+        overlays_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        overlays_scroll.setStyleSheet("QScrollArea { background: transparent; } QScrollArea > QWidget > QWidget { background: transparent; }")
         self._logs_page = _LogsPage()
         self._settings_page = _SettingsPage()
         self._history_page = _HistoryPage()
-        self._stack.addWidget(self._overlays_page)
+        self._stack.addWidget(overlays_scroll)
         self._stack.addWidget(self._logs_page)
         self._stack.addWidget(self._settings_page)
         self._stack.addWidget(self._history_page)
