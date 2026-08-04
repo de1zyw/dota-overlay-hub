@@ -45,6 +45,21 @@ from overlay_window import OverlayWindow
 from player_stats_window import PlayerStatsWindow
 from region_calibrator import RegionCalibrator
 
+# Every way on_profile_lookup_hotkey can come up empty, worded so the user
+# knows what to actually DO about each one instead of one generic "not
+# found" that looks identical whether OCR read garbage, the region was
+# never calibrated, or OpenDota itself is just down right now.
+_LOOKUP_REASON_MESSAGES = {
+    "no_region": "Область экрана для OCR не откалибрована — открой хаб → Калибровка",
+    "capture_failed": (
+        "Не удалось сделать скриншот региона — проверь, что в системных "
+        "настройках разрешены скриншоты приложениям"
+    ),
+    "ocr_empty": "Не удалось распознать ник в этой области — попробуй перекалибровать регион",
+    "opendota_error": "OpenDota сейчас недоступен — попробуй ещё раз через минуту",
+    "not_found": "Игрок с таким ником не найден на OpenDota",
+}
+
 
 @dataclass(frozen=True)
 class MatchState:
@@ -136,12 +151,12 @@ class _MainThreadBridge(QObject):
         event_log.log("CALIBRATION_DONE", region=region)
         self._active_calibrator = None
 
-    def _on_profile_lookup_ready(self, candidates):
+    def _on_profile_lookup_ready(self, payload):
         event_log.log("HOTKEY", action="profile_lookup")
+        candidates = payload["candidates"]
         if not candidates:
-            self._player_stats_window.render_stats(
-                None, empty_message="Профиль не распознан или не найден на OpenDota"
-            )
+            message = _LOOKUP_REASON_MESSAGES.get(payload["reason"], _LOOKUP_REASON_MESSAGES["not_found"])
+            self._player_stats_window.render_stats(None, empty_message=message)
             self._player_stats_window.show_stats()
             return
         if len(candidates) == 1:
@@ -258,28 +273,35 @@ class OverlayApp:
         region = profile_lookup_settings.load()
         if region is None:
             event_log.log("PROFILE_LOOKUP_RESULT", stage="no_region")
-            self.bridge.profile_lookup_ready.emit([])
+            self.bridge.profile_lookup_ready.emit({"candidates": [], "reason": "no_region"})
             return
         image = capture_region(region)
+        if image is None:
+            event_log.log("PROFILE_LOOKUP_RESULT", stage="capture_failed")
+            self.bridge.profile_lookup_ready.emit({"candidates": [], "reason": "capture_failed"})
+            return
         # Logged even on success - the raw OCR text is the single most
         # useful piece of evidence when a lookup fails downstream (bad
         # crop, wrong font contrast, wrong language pack all show up
         # here as garbled/empty text, distinct from "OCR read a real
         # nickname but OpenDota search found no match").
         nickname = read_nickname(image)
-        event_log.log(
-            "PROFILE_LOOKUP_RESULT", stage="ocr_done",
-            captured=image is not None, nickname=nickname,
-        )
+        event_log.log("PROFILE_LOOKUP_RESULT", stage="ocr_done", nickname=nickname)
         if not nickname:
-            self.bridge.profile_lookup_ready.emit([])
+            self.bridge.profile_lookup_ready.emit({"candidates": [], "reason": "ocr_empty"})
             return
         candidates = search_players(nickname)
         event_log.log(
             "PROFILE_LOOKUP_RESULT", stage="search_done",
-            candidate_count=len(candidates),
+            candidate_count=None if candidates is None else len(candidates),
         )
-        self.bridge.profile_lookup_ready.emit(candidates)
+        if candidates is None:
+            self.bridge.profile_lookup_ready.emit({"candidates": [], "reason": "opendota_error"})
+            return
+        if not candidates:
+            self.bridge.profile_lookup_ready.emit({"candidates": [], "reason": "not_found"})
+            return
+        self.bridge.profile_lookup_ready.emit({"candidates": candidates, "reason": None})
 
     def start_services(self):
         event_log.init()

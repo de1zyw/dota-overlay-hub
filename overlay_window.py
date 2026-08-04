@@ -217,7 +217,13 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
         )
 
     if stats.hidden:
-        label = QLabel(f"{stats.nickname} — профиль скрыт")
+        # error_reason set means OpenDota itself is unavailable right now
+        # (network/rate-limit/their outage) - worded differently from a
+        # genuinely private profile so the row doesn't read as "this
+        # player is hiding something" when it's actually just our data
+        # source being briefly down.
+        suffix = "OpenDota недоступен" if stats.error_reason else "профиль скрыт"
+        label = QLabel(f"{stats.nickname} — {suffix}")
         label.setStyleSheet("color: #888899; font-family: sans-serif; font-size: 13px;")
         # Fixed to the same height as the icon-bearing rows below (driven by
         # HERO_ICON_SIZE, the tallest fixed-size widget in a normal row) so a
@@ -230,7 +236,13 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
         layout.addStretch()
         return row
 
-    nickname_label = QLabel(stats.nickname)
+    # stale: a live re-fetch failed but a previous successful fetch for this
+    # account exists, so real (if slightly old) numbers are shown instead of
+    # blanking the row - the "⚠" is the only hint of that trade-off here;
+    # the full "updated N min ago" explanation lives in player_stats_window,
+    # which has room for it and isn't on a tight draft-timer clock.
+    nickname_text = f"⚠ {stats.nickname}" if stats.stale else stats.nickname
+    nickname_label = QLabel(nickname_text)
     nickname_style = "color: white; font-family: sans-serif; font-size: 13px; font-weight: 600;"
     if stats.account_id in party_account_ids:
         # Highlight the local client's own party members (see lobby_watcher's

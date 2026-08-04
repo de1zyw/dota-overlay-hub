@@ -49,25 +49,31 @@ def capture_via_portal(region=None, timeout_s=8):
             None,
         )
 
-        options = {
-            "handle_token": GLib.Variant("s", token),
-            "interactive": GLib.Variant("b", False),
-        }
-        bus.call_sync(
-            "org.freedesktop.portal.Desktop",
-            "/org/freedesktop/portal/desktop",
-            "org.freedesktop.portal.Screenshot",
-            "Screenshot",
-            GLib.Variant("(sa{sv})", ("", options)),
-            GLib.VariantType("(o)"),
-            Gio.DBusCallFlags.NONE,
-            -1,
-            None,
-        )
+        try:
+            options = {
+                "handle_token": GLib.Variant("s", token),
+                "interactive": GLib.Variant("b", False),
+            }
+            bus.call_sync(
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.portal.Screenshot",
+                "Screenshot",
+                GLib.Variant("(sa{sv})", ("", options)),
+                GLib.VariantType("(o)"),
+                Gio.DBusCallFlags.NONE,
+                -1,
+                None,
+            )
 
-        GLib.timeout_add_seconds(timeout_s, loop.quit)
-        loop.run()
-        bus.signal_unsubscribe(sub_id)
+            GLib.timeout_add_seconds(timeout_s, loop.quit)
+            loop.run()
+        finally:
+            # Must run even if call_sync raised before loop.run() ever
+            # started - otherwise this subscription (and its on_signal
+            # closure) leaks on the shared session bus connection for the
+            # lifetime of the process, one per failed capture attempt.
+            bus.signal_unsubscribe(sub_id)
 
         if result.get("code") != 0:
             event_log.log(
