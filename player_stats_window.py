@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 import config
 import error_codes
 import window_position
-from assets import get_rank_icon_path
+from assets import get_hero_icon_path, get_rank_icon_path
 from overlay_window import _GradientPanel, _icon_label, _match_history_group, _winrate_color
 
 RANK_ICON_SIZE = 48
@@ -126,6 +126,38 @@ class PlayerStatsWindow(QWidget):
 
         self._layout.addWidget(_match_history_group(stats.recent_matches[0:5], show_kda=True))
         self._layout.addWidget(_match_history_group(stats.recent_matches[5:10], show_kda=True))
+
+        if stats.top_heroes:
+            top_heroes_label = QLabel("ТОП ГЕРОИ")
+            top_heroes_label.setStyleSheet(
+                "color: #888899; font-family: sans-serif; font-size: 11px; "
+                "font-weight: bold; letter-spacing: 1px;"
+            )
+            self._layout.addWidget(top_heroes_label)
+
+            top_heroes_row = QWidget()
+            top_heroes_layout = QHBoxLayout(top_heroes_row)
+            top_heroes_layout.setContentsMargins(0, 0, 0, 0)
+            top_heroes_layout.setSpacing(12)
+            for hero_id, games, win in stats.top_heroes:
+                entry = QWidget()
+                entry_layout = QVBoxLayout(entry)
+                entry_layout.setContentsMargins(0, 0, 0, 0)
+                entry_layout.setSpacing(2)
+                entry_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+                entry_layout.addWidget(
+                    _icon_label(get_hero_icon_path(hero_id), 32), 0, Qt.AlignmentFlag.AlignHCenter
+                )
+                hero_winrate = (win / games * 100) if games else None
+                caption = QLabel(f"{hero_winrate:.0f}% · {games}" if hero_winrate is not None else "н/д")
+                caption.setStyleSheet(
+                    f"color: {_winrate_color(hero_winrate)}; font-family: sans-serif; font-size: 10px;"
+                )
+                caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                entry_layout.addWidget(caption)
+                top_heroes_layout.addWidget(entry)
+            top_heroes_layout.addStretch()
+            self._layout.addWidget(top_heroes_row)
 
         self._panel.adjustSize()
         self.adjustSize()

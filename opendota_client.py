@@ -297,7 +297,10 @@ def fetch_player_stats(account_id):
         heroes = heroes_f.result() or []
     except OpenDotaError:
         heroes = []
-    top_heroes = [h["hero_id"] for h in heroes if h.get("games", 0) > 0][:3]
+    top_heroes = [
+        (h["hero_id"], h.get("games", 0), h.get("win", 0))
+        for h in heroes if h.get("games", 0) > 0
+    ][:3]
 
     stats = PlayerStats(
         account_id=account_id, nickname=nickname, hidden=hidden,
