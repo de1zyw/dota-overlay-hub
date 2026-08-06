@@ -37,12 +37,13 @@ ACCENT_GOLD = QColor("#FFD166")
 # large black corners, not a lit-up panel edge to edge.
 BASE_BG = QColor(4, 4, 6, 250)
 
-ICON_SIZE = 28
-HERO_ICON_SIZE = 32
-MATCH_ICON_SIZE = 18
+ICON_SIZE = 40
+HERO_ICON_SIZE = 46
+MATCH_ICON_SIZE = 26
 MATCH_ICON_BORDER = 2
 MATCH_HISTORY_COUNT = 5
-FACTION_ICON_SIZE = 20
+FACTION_ICON_SIZE = 28
+ITEM_ICON_SIZE = 28
 
 # The one spacing value used everywhere icon-type elements sit next to each
 # other (rank icon <-> current-pick icon <-> match-history icons <-> text,
@@ -333,7 +334,7 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
     for item_id in stats.items:
         icon_path = get_item_icon_path(item_id)
         if icon_path:
-            items_layout.addWidget(_icon_label(icon_path, 20))
+            items_layout.addWidget(_icon_label(icon_path, ITEM_ICON_SIZE))
     items_layout.addStretch()
     outer.addWidget(items_row)
 

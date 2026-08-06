@@ -18,7 +18,10 @@ from local_hero_stats import get_hero_standings
 from opendota_client import fetch_peers
 from overlay_window import _GradientPanel, _icon_label, _match_history_group, _winrate_color
 
-RANK_ICON_SIZE = 48
+RANK_ICON_SIZE = 60
+TOP_HERO_ICON_SIZE = 44
+PEER_AVATAR_SIZE = 32
+LOCAL_RECORD_HERO_ICON_SIZE = 32
 
 # stats.hidden with a given error_reason means "OpenDota itself is the
 # problem right now", not "this profile is actually private" - shown as a
@@ -155,7 +158,7 @@ class PlayerStatsWindow(QWidget):
                 entry_layout.setSpacing(2)
                 entry_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
                 entry_layout.addWidget(
-                    _icon_label(get_hero_icon_path(hero_id), 32), 0, Qt.AlignmentFlag.AlignHCenter
+                    _icon_label(get_hero_icon_path(hero_id), TOP_HERO_ICON_SIZE), 0, Qt.AlignmentFlag.AlignHCenter
                 )
                 hero_winrate = (win / games * 100) if games else None
                 caption = QLabel(f"{hero_winrate:.0f}% · {games}" if hero_winrate is not None else "н/д")
@@ -179,7 +182,7 @@ class PlayerStatsWindow(QWidget):
                 self._layout.addWidget(peers_label)
                 for peer in peers:
                     row = QHBoxLayout()
-                    row.addWidget(_icon_label(get_avatar_path(peer["account_id"], peer["avatarfull"]), 24))
+                    row.addWidget(_icon_label(get_avatar_path(peer["account_id"], peer["avatarfull"]), PEER_AVATAR_SIZE))
                     name = QLabel(peer["personaname"])
                     name.setStyleSheet("color: white; font-family: sans-serif; font-size: 12px;")
                     row.addWidget(name)
@@ -223,7 +226,7 @@ class PlayerStatsWindow(QWidget):
                     if not entry:
                         continue
                     row = QHBoxLayout()
-                    row.addWidget(_icon_label(get_hero_icon_path(hero_id), 24))
+                    row.addWidget(_icon_label(get_hero_icon_path(hero_id), LOCAL_RECORD_HERO_ICON_SIZE))
                     streak = entry.get("win_streak", 0)
                     streak_text = f"  •  винстрик {streak}" if streak else ""
                     text = QLabel(
