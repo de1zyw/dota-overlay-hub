@@ -199,6 +199,18 @@ def search_players(name):
 
 
 @dataclass
+class RecentMatch:
+    hero_id: int
+    won: bool
+    match_id: int
+    kills: int
+    deaths: int
+    assists: int
+    gpm: int
+    xpm: int
+
+
+@dataclass
 class PlayerStats:
     account_id: int
     nickname: str
@@ -206,7 +218,7 @@ class PlayerStats:
     rank_tier: int = None
     total_games: int = 0
     winrate: float = None
-    recent_matches: list = field(default_factory=list)  # [(hero_id, won: bool, match_id: int), ...], newest first, max 10
+    recent_matches: list = field(default_factory=list)  # list[RecentMatch], newest first, max 10
     top_heroes: list = field(default_factory=list)
     dotabuff_url: str = ""
     # Set only when hidden=True: WHY there's no data, so a caller can tell
@@ -268,7 +280,16 @@ def fetch_player_stats(account_id):
     except OpenDotaError:
         recent = []
     recent_matches = [
-        (m.get("hero_id"), m.get("radiant_win") == (m.get("player_slot", 0) < 128), m.get("match_id"))
+        RecentMatch(
+            hero_id=m.get("hero_id"),
+            won=m.get("radiant_win") == (m.get("player_slot", 0) < 128),
+            match_id=m.get("match_id"),
+            kills=m.get("kills") or 0,
+            deaths=m.get("deaths") or 0,
+            assists=m.get("assists") or 0,
+            gpm=m.get("gold_per_min") or 0,
+            xpm=m.get("xp_per_min") or 0,
+        )
         for m in recent[:10]
     ]
 

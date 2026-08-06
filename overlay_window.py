@@ -111,7 +111,8 @@ def _match_history_group(recent_matches):
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(ICON_GAP)
 
-    for hero_id, won, _match_id in recent_matches[:MATCH_HISTORY_COUNT]:
+    for match in recent_matches[:MATCH_HISTORY_COUNT]:
+        hero_id, won = match.hero_id, match.won
         border_color = config.COLOR_GREEN if won else config.COLOR_RED
         inner = MATCH_ICON_SIZE - 2 * MATCH_ICON_BORDER
         label = QLabel()
