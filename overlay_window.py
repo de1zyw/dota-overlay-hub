@@ -38,12 +38,12 @@ ACCENT_GOLD = QColor("#FFD166")
 BASE_BG = QColor(4, 4, 6, 250)
 
 ICON_SIZE = 40
-HERO_ICON_SIZE = 46
+HERO_ICON_SIZE = 38
 MATCH_ICON_SIZE = 26
 MATCH_ICON_BORDER = 2
 MATCH_HISTORY_COUNT = 5
 FACTION_ICON_SIZE = 28
-ITEM_ICON_SIZE = 28
+ITEM_ICON_SIZE = 36
 
 # The one spacing value used everywhere icon-type elements sit next to each
 # other (rank icon <-> current-pick icon <-> match-history icons <-> text,
