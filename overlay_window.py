@@ -102,22 +102,23 @@ def _hero_pick_icon(hero_id):
     return label
 
 
-def _match_history_group(recent_matches):
+def _match_history_group(recent_matches, show_kda=False):
     """Small hero-icon strip for the last few matches, newest first, each
     ringed green (win) or red (loss) - a win is always green, never the
-    background's purple accent, so the win/loss signal stays unambiguous."""
+    background's purple accent, so the win/loss signal stays unambiguous.
+    show_kda=True (player_stats_window.py only - the compact draft row has
+    no room for it) adds a small "K/D/A" caption under each icon."""
     group = QWidget()
     layout = QHBoxLayout(group)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(ICON_GAP)
 
     for match in recent_matches[:MATCH_HISTORY_COUNT]:
-        hero_id, won = match.hero_id, match.won
-        border_color = config.COLOR_GREEN if won else config.COLOR_RED
+        border_color = config.COLOR_GREEN if match.won else config.COLOR_RED
         inner = MATCH_ICON_SIZE - 2 * MATCH_ICON_BORDER
         label = QLabel()
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        path = get_hero_icon_path(hero_id)
+        path = get_hero_icon_path(match.hero_id)
         if path:
             pixmap = QPixmap(path)
             if not pixmap.isNull():
@@ -129,7 +130,26 @@ def _match_history_group(recent_matches):
         label.setStyleSheet(
             f"border: {MATCH_ICON_BORDER}px solid {border_color}; border-radius: 4px;"
         )
-        layout.addWidget(label)
+
+        if not show_kda:
+            layout.addWidget(label)
+            continue
+
+        # Icon + caption stacked - a plain QLabel can't hold both, and the
+        # caption is wider than the 18px icon, so this is a small column,
+        # not just the bare icon. Qt sizes each column to its widest child
+        # (the caption text) automatically - no manual width math needed.
+        entry = QWidget()
+        entry_layout = QVBoxLayout(entry)
+        entry_layout.setContentsMargins(0, 0, 0, 0)
+        entry_layout.setSpacing(2)
+        entry_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        entry_layout.addWidget(label, 0, Qt.AlignmentFlag.AlignHCenter)
+        kda = QLabel(f"{match.kills}/{match.deaths}/{match.assists}")
+        kda.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 9px;")
+        kda.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        entry_layout.addWidget(kda)
+        layout.addWidget(entry)
 
     return group
 

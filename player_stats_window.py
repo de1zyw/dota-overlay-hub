@@ -124,8 +124,8 @@ class PlayerStatsWindow(QWidget):
         )
         self._layout.addWidget(history_label)
 
-        self._layout.addWidget(_match_history_group(stats.recent_matches[0:5]))
-        self._layout.addWidget(_match_history_group(stats.recent_matches[5:10]))
+        self._layout.addWidget(_match_history_group(stats.recent_matches[0:5], show_kda=True))
+        self._layout.addWidget(_match_history_group(stats.recent_matches[5:10], show_kda=True))
 
         self._panel.adjustSize()
         self.adjustSize()
