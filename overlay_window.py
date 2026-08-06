@@ -228,10 +228,21 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
         # clearly different signal from the party-underline (blue,
         # applied to the nickname text only) below, so the two never
         # look like the same highlight.
+        #
+        # Scoped to an objectName, not a bare "QFrame { ... }" type
+        # selector - a type selector cascades down to every matching
+        # descendant Qt finds in the tree, not just the widget it was set
+        # on, which visibly gave every child label its own separate gold
+        # bracket+background instead of one shared highlight across the
+        # whole row (confirmed live via an isolated render with zero
+        # children beyond the nickname/hero-icon placeholder - same
+        # per-widget cascade already documented and fixed this same way
+        # for _OverlayCard in launcher.py).
         tint = QColor(ACCENT_GOLD)
         tint.setAlpha(30)
+        row.setObjectName("isYouRow")
         row.setStyleSheet(
-            "QFrame { "
+            "QFrame#isYouRow { "
             f"border-left: 3px solid {ACCENT_GOLD.name()}; "
             f"background-color: rgba({tint.red()}, {tint.green()}, {tint.blue()}, {tint.alpha()}); "
             "border-radius: 4px; "
