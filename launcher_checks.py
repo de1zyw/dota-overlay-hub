@@ -247,6 +247,16 @@ CHECKS = [
     ("Steam-аккаунт", check_steam_account),
 ]
 
+# Last-match recap doesn't touch server_log.txt/GSI at all (it reads
+# last_match.dat locally, then polls OpenDota by match_id - see
+# last_match_watcher.py) - same shorter shape as SELF_STATS_CHECKS below.
+LAST_MATCH_CHECKS = [
+    ("Python-зависимости", check_dependencies),
+    ("DNS", check_dns),
+    ("OpenDota API", check_opendota_reachable),
+    ("Steam-аккаунт", check_steam_account_self_stats),
+]
+
 # Self-stats only needs the app to run and the local account to be known -
 # it doesn't touch server_log.txt/GSI at all, so it gets its own shorter
 # checklist rather than reusing CHECKS wholesale. It DOES need OpenDota

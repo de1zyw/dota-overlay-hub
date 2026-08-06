@@ -33,7 +33,10 @@ import config
 import hotkey_settings
 import overlay_position_settings
 import profile_lookup_history
-from launcher_checks import CHECKS, PROFILE_LOOKUP_CHECKS, SELF_STATS_CHECKS, STATUS_ERROR, STATUS_OK, STATUS_WARN
+from launcher_checks import (
+    LAST_MATCH_CHECKS, PROFILE_LOOKUP_CHECKS, SELF_STATS_CHECKS,
+    STATUS_ERROR, STATUS_OK, STATUS_WARN,
+)
 from logs_view import list_log_runs
 from overlay_window import _GradientPanel
 
@@ -133,9 +136,14 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 # script, so "Запустить" on either card starts the same thing.
 OVERLAY_ENTRIES = [
     {
-        "name": "Драфт-статы",
-        "description": "Ранг, винрейт, последние матчи и текущий пик союзников/врагов на драфте.",
-        "checks": CHECKS,
+        "name": "Разбор последнего матча",
+        "description": (
+            "Полный ростер твоего последнего матча с рангом/винрейтом/предметами каждого — "
+            f"по хоткею ({hotkey_settings.load()['last_match']}, меняется в НАСТРОЙКИ). "
+            "НЕ живой драфт — Dota больше не даёт эти данные во время игры, только после "
+            "того как OpenDota обработает матч (может занять время после конца игры)."
+        ),
+        "checks": LAST_MATCH_CHECKS,
         "entry_script": "app.py",
     },
     {
@@ -440,6 +448,7 @@ class _SettingsPage(QWidget):
         ("self_stats", "Моя стата"),
         ("calibrate", "Калибровка профиля"),
         ("profile_lookup", "Профиль по клику"),
+        ("last_match", "Разбор последнего матча"),
     ]
 
     def __init__(self):
