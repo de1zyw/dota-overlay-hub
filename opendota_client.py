@@ -198,6 +198,29 @@ def search_players(name):
     ][:5]
 
 
+def fetch_peers(account_id, limit=3):
+    """Top `limit` most-frequent teammates by games played together, or
+    None on any OpenDota-side error (same convention as search_players -
+    None means "couldn't ask", not "nobody found"). Self-account use only
+    (see player_stats_window.py) - this endpoint is about the QUERIED
+    account's own peers, not meaningful on a looked-up stranger's profile."""
+    try:
+        peers = _cached_get(f"/players/{account_id}/peers", ttl=300) or []
+    except OpenDotaError:
+        return None
+    peers = sorted(peers, key=lambda p: p.get("games", 0), reverse=True)[:limit]
+    return [
+        {
+            "account_id": p.get("account_id"),
+            "personaname": p.get("personaname") or f"[{p.get('account_id')}]",
+            "avatarfull": p.get("avatarfull"),
+            "win": p.get("win", 0),
+            "games": p.get("games", 0),
+        }
+        for p in peers
+    ]
+
+
 @dataclass
 class RecentMatch:
     hero_id: int

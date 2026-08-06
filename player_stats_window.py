@@ -13,7 +13,8 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 import config
 import error_codes
 import window_position
-from assets import get_hero_icon_path, get_rank_icon_path
+from assets import get_avatar_path, get_hero_icon_path, get_rank_icon_path
+from opendota_client import fetch_peers
 from overlay_window import _GradientPanel, _icon_label, _match_history_group, _winrate_color
 
 RANK_ICON_SIZE = 48
@@ -61,7 +62,7 @@ class PlayerStatsWindow(QWidget):
             if widget:
                 widget.deleteLater()
 
-    def render_stats(self, stats, empty_message="Steam-аккаунт не определён — стата недоступна"):
+    def render_stats(self, stats, empty_message="Steam-аккаунт не определён — стата недоступна", is_self=False):
         self._clear_layout()
 
         if stats is None:
@@ -165,6 +166,32 @@ class PlayerStatsWindow(QWidget):
                 top_heroes_layout.addWidget(entry)
             top_heroes_layout.addStretch()
             self._layout.addWidget(top_heroes_row)
+
+        if is_self:
+            peers = fetch_peers(stats.account_id)
+            if peers:
+                peers_label = QLabel("ЧАСТО ИГРАЕШЬ С")
+                peers_label.setStyleSheet(
+                    "color: #888899; font-family: sans-serif; font-size: 11px; "
+                    "font-weight: bold; letter-spacing: 1px;"
+                )
+                self._layout.addWidget(peers_label)
+                for peer in peers:
+                    row = QHBoxLayout()
+                    row.addWidget(_icon_label(get_avatar_path(peer["account_id"], peer["avatarfull"]), 24))
+                    name = QLabel(peer["personaname"])
+                    name.setStyleSheet("color: white; font-family: sans-serif; font-size: 12px;")
+                    row.addWidget(name)
+                    row.addStretch()
+                    together_wr = (peer["win"] / peer["games"] * 100) if peer["games"] else None
+                    wr_label = QLabel(
+                        f"{together_wr:.0f}% · {peer['games']} игр" if together_wr is not None else "н/д"
+                    )
+                    wr_label.setStyleSheet(
+                        f"color: {_winrate_color(together_wr)}; font-family: sans-serif; font-size: 11px;"
+                    )
+                    row.addWidget(wr_label)
+                    self._layout.addLayout(row)
 
         self._panel.adjustSize()
         self.adjustSize()

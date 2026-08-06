@@ -96,6 +96,16 @@ def get_faction_icon_path(team):
     return _download(url, dest)
 
 
+def get_avatar_path(account_id, avatar_url):
+    """Unlike hero/rank icons (a small fixed enumerable set, prefetched by
+    prefetch_all_icons), peer avatars are one arbitrary URL per arbitrary
+    account_id - unbounded, so this is fetched on demand, not prefetched."""
+    if not avatar_url or not account_id:
+        return None
+    dest = os.path.join(CACHE_DIR, f"avatar_{account_id}.jpg")
+    return _download(avatar_url, dest)
+
+
 def prefetch_all_icons():
     """Warms the on-disk cache for every icon this app can ever need, so a
     real draft never has to hit get_hero_icon_path()/get_rank_icon_path()

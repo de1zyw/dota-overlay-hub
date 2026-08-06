@@ -171,7 +171,7 @@ class _MainThreadBridge(QObject):
         if self._player_stats_window.isVisible():
             self._player_stats_window.hide_stats()
         else:
-            self._player_stats_window.render_stats(stats)
+            self._player_stats_window.render_stats(stats, is_self=True)
             self._player_stats_window.show_stats()
 
     def _on_calibrate_requested(self):
