@@ -22,6 +22,7 @@ a plain function or a bound method of the (non-QObject) `OverlayApp`.
 import os
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -32,6 +33,7 @@ from PyQt6.QtWidgets import QApplication
 import config
 import error_codes
 import event_log
+import last_match_watcher
 from assets import prefetch_all_icons
 from draft_matcher import match_current_picks
 from gsi_server import GSIServer
@@ -41,10 +43,22 @@ import profile_lookup_history
 import profile_lookup_settings
 from candidate_picker_window import CandidatePickerWindow
 from ocr_capture import capture_region, read_nickname
-from opendota_client import fetch_player_stats, search_players
+from opendota_client import PlayerStats, fetch_match_roster, fetch_player_stats, search_players
 from overlay_window import OverlayWindow
 from player_stats_window import PlayerStatsWindow
 from region_calibrator import RegionCalibrator
+
+# Every way on_last_match_hotkey can come up empty.
+_LAST_MATCH_REASON_MESSAGES = {
+    "no_match_id": (
+        "Не нашли последний матч — либо Steam-аккаунт не определён, либо ты ещё "
+        f"не играл матчей с этой машины {error_codes.tag(error_codes.LAST_MATCH_FILE_MISSING)}"
+    ),
+    "not_ready": (
+        "OpenDota ещё не обработал этот матч — попробуй ещё раз через пару минут "
+        f"(это не наша задержка, а их обработка) {error_codes.tag(error_codes.MATCH_NOT_INDEXED_YET)}"
+    ),
+}
 
 # Every way on_profile_lookup_hotkey can come up empty, worded so the user
 # knows what to actually DO about each one instead of one generic "not
@@ -89,6 +103,8 @@ class _MainThreadBridge(QObject):
     self_stats_ready = pyqtSignal(object)
     calibrate_requested = pyqtSignal()
     profile_lookup_ready = pyqtSignal(object)
+    last_match_loading = pyqtSignal()
+    last_match_ready = pyqtSignal(object)
 
     def __init__(self, window, hide_timer, player_stats_window):
         super().__init__()
@@ -103,10 +119,30 @@ class _MainThreadBridge(QObject):
         self.self_stats_ready.connect(self._on_self_stats_ready)
         self.calibrate_requested.connect(self._on_calibrate_requested)
         self.profile_lookup_ready.connect(self._on_profile_lookup_ready)
+        self.last_match_loading.connect(self._on_last_match_loading)
+        self.last_match_ready.connect(self._on_last_match_ready)
 
     def _on_new_match_ready(self, radiant, dire, current_picks, party_account_ids):
         self._window.render_lobby(radiant, dire, current_picks, party_account_ids)
         event_log.log("OVERLAY_SHOW", reason="new_match")
+        self._window.show_overlay()
+        self._hide_timer.start(config.AUTO_HIDE_SECONDS * 1000)
+
+    def _on_last_match_loading(self):
+        self._player_stats_window.render_stats(
+            None, empty_message="Ищу последний матч и жду данные от OpenDota…"
+        )
+        self._player_stats_window.show_stats()
+
+    def _on_last_match_ready(self, payload):
+        if payload["radiant"] is None:
+            message = _LAST_MATCH_REASON_MESSAGES.get(payload["reason"], _LAST_MATCH_REASON_MESSAGES["not_ready"])
+            self._player_stats_window.render_stats(None, empty_message=message)
+            self._player_stats_window.show_stats()
+            return
+        self._player_stats_window.hide_stats()
+        self._window.render_lobby(payload["radiant"], payload["dire"], payload["current_picks"], set())
+        event_log.log("OVERLAY_SHOW", reason="last_match")
         self._window.show_overlay()
         self._hide_timer.start(config.AUTO_HIDE_SECONDS * 1000)
 
@@ -202,6 +238,7 @@ class OverlayApp:
             on_self_stats=self.on_self_stats_hotkey,
             on_calibrate=self.bridge.calibrate_requested.emit,
             on_profile_lookup=self.on_profile_lookup_hotkey,
+            on_last_match=self.on_last_match_hotkey,
         )
 
         # Last-known lobby state, set by on_new_match (background thread) and
@@ -303,6 +340,62 @@ class OverlayApp:
             self.bridge.profile_lookup_ready.emit({"candidates": [], "reason": "not_found"})
             return
         self.bridge.profile_lookup_ready.emit({"candidates": candidates, "reason": None})
+
+    def on_last_match_hotkey(self):
+        # Runs on pynput's own listener thread - safe to block here for a
+        # long time (up to LAST_MATCH_POLL_TIMEOUT_SECONDS). Confirmed live
+        # (2026-08-04) that OpenDota doesn't have a match's data anywhere
+        # near its start, only sometime after it ends - see
+        # last_match_watcher.py's module docstring - so this is a genuine
+        # "wait, possibly minutes" action, not an instant lookup like
+        # self-stats/profile-lookup above. The loading message (emitted
+        # first) is what tells the user their press registered instead of
+        # them wondering if the hotkey did anything for the next several
+        # minutes.
+        event_log.log("HOTKEY", action="last_match")
+        self.bridge.last_match_loading.emit()
+
+        match_id = last_match_watcher.read_last_match_id(config.MY_ACCOUNT_ID)
+        if match_id is None:
+            event_log.log("LAST_MATCH_RESULT", stage="no_match_id")
+            self.bridge.last_match_ready.emit({"radiant": None, "dire": None, "reason": "no_match_id"})
+            return
+
+        deadline = time.time() + config.LAST_MATCH_POLL_TIMEOUT_SECONDS
+        roster = None
+        while time.time() < deadline:
+            roster = fetch_match_roster(match_id)
+            if roster is not None:
+                break
+            time.sleep(10)
+
+        if roster is None:
+            event_log.log("LAST_MATCH_RESULT", stage="not_ready", match_id=match_id)
+            self.bridge.last_match_ready.emit({"radiant": None, "dire": None, "reason": "not_ready"})
+            return
+
+        account_ids = [aid for _, _, aid, _ in roster if aid is not None]
+        stats_by_id = dict(zip(account_ids, self.executor.map(fetch_player_stats, account_ids)))
+
+        def _stats_for(account_id, hero_id):
+            if account_id is None:
+                # OpenDota itself doesn't have an account_id for this player
+                # (their profile is private even in match data) - nothing to
+                # fetch, build a hidden placeholder directly rather than
+                # calling fetch_player_stats(None).
+                return PlayerStats(account_id=0, nickname="[скрыт]", hidden=True, dotabuff_url="")
+            return stats_by_id[account_id]
+
+        radiant = [_stats_for(aid, hero_id) for team, _, aid, hero_id in roster if team == "radiant"]
+        dire = [_stats_for(aid, hero_id) for team, _, aid, hero_id in roster if team == "dire"]
+        # Built straight from roster, not by zipping against radiant/dire -
+        # those two are reordered (all radiant first, then all dire) relative
+        # to roster's original per-player order, so zipping them together
+        # would silently pair the wrong hero_id with the wrong account_id.
+        current_picks = {aid: hero_id for _, _, aid, hero_id in roster if aid is not None}
+
+        event_log.log("LAST_MATCH_RESULT", stage="ready", match_id=match_id)
+        self.bridge.last_match_ready.emit({"radiant": radiant, "dire": dire, "reason": None, "current_picks": current_picks})
 
     def start_services(self):
         event_log.init()

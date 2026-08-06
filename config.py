@@ -28,6 +28,14 @@ HOTKEY_EXPAND = _hotkeys["expand"]
 HOTKEY_SELF_STATS = _hotkeys["self_stats"]
 HOTKEY_CALIBRATE = _hotkeys["calibrate"]
 HOTKEY_PROFILE_LOOKUP = _hotkeys["profile_lookup"]
+HOTKEY_LAST_MATCH = _hotkeys["last_match"]
+
+# How long on_last_match_hotkey keeps polling OpenDota after detecting a
+# match_id before giving up - confirmed live (2026-08-04) that OpenDota does
+# NOT have a match's data anywhere near match start, only sometime after it
+# ends, so this has to be generous. Not "live during draft" - see
+# last_match_watcher.py's module docstring.
+LAST_MATCH_POLL_TIMEOUT_SECONDS = 600
 
 WINRATE_GREEN = 55.0
 WINRATE_RED = 45.0

@@ -25,6 +25,10 @@ CONNECTION_ERROR = 0x2002
 TLS_ERROR = 0x2003
 TIMEOUT = 0x2004
 INVALID_JSON = 0x2005
+# Not a transport failure - OpenDota answered fine, it just doesn't have
+# this match_id indexed yet. Separate code because the fix is "wait", not
+# "check your connection" (see last_match_watcher.py's timing caveat).
+MATCH_NOT_INDEXED_YET = 0x2006
 
 # 0x3xxx - Dota's own files/config on this machine
 DOTA_DIR_MISSING = 0x3001
@@ -32,6 +36,7 @@ GSI_CFG_MISSING = 0x3002
 GSI_PORT_BUSY = 0x3003
 SERVER_LOG_MISSING = 0x3004
 STEAM_ACCOUNT_UNKNOWN = 0x3005
+LAST_MATCH_FILE_MISSING = 0x3006
 
 # 0x4xxx - OCR / profile-lookup pipeline
 REGION_NOT_CALIBRATED = 0x4001
@@ -49,11 +54,13 @@ NAMES = {
     TLS_ERROR: "TLS_ERROR",
     TIMEOUT: "TIMEOUT",
     INVALID_JSON: "INVALID_JSON",
+    MATCH_NOT_INDEXED_YET: "MATCH_NOT_INDEXED_YET",
     DOTA_DIR_MISSING: "DOTA_DIR_MISSING",
     GSI_CFG_MISSING: "GSI_CFG_MISSING",
     GSI_PORT_BUSY: "GSI_PORT_BUSY",
     SERVER_LOG_MISSING: "SERVER_LOG_MISSING",
     STEAM_ACCOUNT_UNKNOWN: "STEAM_ACCOUNT_UNKNOWN",
+    LAST_MATCH_FILE_MISSING: "LAST_MATCH_FILE_MISSING",
     REGION_NOT_CALIBRATED: "REGION_NOT_CALIBRATED",
     CAPTURE_FAILED: "CAPTURE_FAILED",
     OCR_EMPTY: "OCR_EMPTY",

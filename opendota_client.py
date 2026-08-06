@@ -146,6 +146,39 @@ def _cached_get(endpoint, params=None, ttl=30):
     return data
 
 
+def fetch_match_roster(match_id):
+    """Returns [(team, team_slot, account_id, hero_id), ...] for a match -
+    one extra field (hero_id) beyond the shape lobby_watcher.parse_latest_match()
+    used to return, since that source never had hero picks bundled in (GSI
+    supplied those separately); OpenDota's match data has both at once, so
+    callers get hero_id for free instead of needing draft_matcher's GSI-join
+    dance. account_id is None for a player whose profile is private
+    (OpenDota itself doesn't get an account_id for them even inside match
+    data - that player still shows up with a hero_id, just without stats
+    being fetchable for them).
+
+    Returns None if OpenDota doesn't have this match yet (still in
+    progress, or not indexed yet - confirmed live that this can take a
+    while after a real match, see last_match_watcher.py) or on any
+    OpenDota-side error. Callers decide whether/how long to keep retrying."""
+    try:
+        data = _cached_get(f"/matches/{match_id}", ttl=15)
+    except OpenDotaError:
+        return None
+    players = data.get("players") or []
+    if len(players) != 10 or not all(p.get("hero_id") for p in players):
+        return None
+    roster = []
+    for p in players:
+        slot = p.get("player_slot") or 0
+        hero_id = p.get("hero_id")
+        if slot < 128:
+            roster.append(("radiant", slot, p.get("account_id"), hero_id))
+        else:
+            roster.append(("dire", slot - 128, p.get("account_id"), hero_id))
+    return roster
+
+
 def search_players(name):
     """None means the search itself failed (network/rate-limit - OpenDota's
     fault); [] means it succeeded and genuinely found nobody by that name.

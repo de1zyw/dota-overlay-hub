@@ -14,6 +14,7 @@ DEFAULTS = {
     "self_stats": "<ctrl>+<alt>+s",
     "calibrate": "<ctrl>+<alt>+r",
     "profile_lookup": "<ctrl>+<alt>+p",
+    "last_match": "<ctrl>+<alt>+m",
 }
 
 

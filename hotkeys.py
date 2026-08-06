@@ -9,7 +9,7 @@ import event_log
 
 
 class HotkeyListener:
-    def __init__(self, on_toggle, on_expand, on_self_stats, on_calibrate, on_profile_lookup):
+    def __init__(self, on_toggle, on_expand, on_self_stats, on_calibrate, on_profile_lookup, on_last_match):
         self._listener = None
         try:
             self._listener = keyboard.GlobalHotKeys({
@@ -18,6 +18,7 @@ class HotkeyListener:
                 config.HOTKEY_SELF_STATS: on_self_stats,
                 config.HOTKEY_CALIBRATE: on_calibrate,
                 config.HOTKEY_PROFILE_LOOKUP: on_profile_lookup,
+                config.HOTKEY_LAST_MATCH: on_last_match,
             })
         except Exception as e:
             # A malformed hotkey string (e.g. hand-typo'd via the hub's
