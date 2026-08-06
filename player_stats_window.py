@@ -14,6 +14,7 @@ import config
 import error_codes
 import window_position
 from assets import get_avatar_path, get_hero_icon_path, get_rank_icon_path
+from local_hero_stats import get_hero_standings
 from opendota_client import fetch_peers
 from overlay_window import _GradientPanel, _icon_label, _match_history_group, _winrate_color
 
@@ -191,6 +192,46 @@ class PlayerStatsWindow(QWidget):
                         f"color: {_winrate_color(together_wr)}; font-family: sans-serif; font-size: 11px;"
                     )
                     row.addWidget(wr_label)
+                    self._layout.addLayout(row)
+
+            standings = get_hero_standings(stats.account_id)
+            if standings:
+                # Picks its own top-3 by LOCAL games played (wins+losses),
+                # deliberately not tied to stats.top_heroes - that comes
+                # from OpenDota's /heroes endpoint, which is empty for any
+                # account with "Expose Public Match Data" off in Steam
+                # (confirmed live: exactly this account). This whole
+                # section exists specifically so local data still shows up
+                # when OpenDota has nothing - it shouldn't need OpenDota's
+                # own list to know which heroes to show.
+                top_local_heroes = sorted(
+                    standings.items(),
+                    key=lambda item: item[1].get("wins", 0) + item[1].get("losses", 0),
+                    reverse=True,
+                )[:3]
+                top_local_heroes = [hero_id for hero_id, entry in top_local_heroes
+                                     if entry.get("wins", 0) + entry.get("losses", 0) > 0]
+            if standings and top_local_heroes:
+                bests_label = QLabel("ЛИЧНЫЕ РЕКОРДЫ")
+                bests_label.setStyleSheet(
+                    "color: #888899; font-family: sans-serif; font-size: 11px; "
+                    "font-weight: bold; letter-spacing: 1px;"
+                )
+                self._layout.addWidget(bests_label)
+                for hero_id in top_local_heroes:
+                    entry = standings.get(hero_id)
+                    if not entry:
+                        continue
+                    row = QHBoxLayout()
+                    row.addWidget(_icon_label(get_hero_icon_path(hero_id), 24))
+                    streak = entry.get("win_streak", 0)
+                    streak_text = f"  •  винстрик {streak}" if streak else ""
+                    text = QLabel(
+                        f"рекорд: {entry.get('best_kills', 0)}/{entry.get('best_gpm', 0)} gpm{streak_text}"
+                    )
+                    text.setStyleSheet("color: #cccccc; font-family: sans-serif; font-size: 11px;")
+                    row.addWidget(text)
+                    row.addStretch()
                     self._layout.addLayout(row)
 
         self._panel.adjustSize()
