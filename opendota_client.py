@@ -147,15 +147,18 @@ def _cached_get(endpoint, params=None, ttl=30):
 
 
 def fetch_match_roster(match_id):
-    """Returns [(team, team_slot, account_id, hero_id), ...] for a match -
-    one extra field (hero_id) beyond the shape lobby_watcher.parse_latest_match()
-    used to return, since that source never had hero picks bundled in (GSI
-    supplied those separately); OpenDota's match data has both at once, so
-    callers get hero_id for free instead of needing draft_matcher's GSI-join
-    dance. account_id is None for a player whose profile is private
-    (OpenDota itself doesn't get an account_id for them even inside match
-    data - that player still shows up with a hero_id, just without stats
-    being fetchable for them).
+    """Returns [(team, team_slot, account_id, hero_id, items), ...] for a
+    match - hero_id and items go beyond the shape
+    lobby_watcher.parse_latest_match() used to return, since that source
+    never had hero picks or a final build bundled in (GSI supplied hero
+    picks separately, and never had item data at all); OpenDota's match
+    data has all of it at once. account_id is None for a player whose
+    profile is private (OpenDota itself doesn't get an account_id for them
+    even inside match data - that player still shows up with a hero_id,
+    just without stats being fetchable for them). items is the final
+    6-slot inventory + neutral item, as raw item_ids (0 = empty slot,
+    kept rather than filtered out so callers can still show 7 slot
+    positions if they want to).
 
     Returns None if OpenDota doesn't have this match yet (still in
     progress, or not indexed yet - confirmed live that this can take a
@@ -172,10 +175,15 @@ def fetch_match_roster(match_id):
     for p in players:
         slot = p.get("player_slot") or 0
         hero_id = p.get("hero_id")
+        items = [
+            p.get("item_0", 0), p.get("item_1", 0), p.get("item_2", 0),
+            p.get("item_3", 0), p.get("item_4", 0), p.get("item_5", 0),
+            p.get("item_neutral", 0),
+        ]
         if slot < 128:
-            roster.append(("radiant", slot, p.get("account_id"), hero_id))
+            roster.append(("radiant", slot, p.get("account_id"), hero_id, items))
         else:
-            roster.append(("dire", slot - 128, p.get("account_id"), hero_id))
+            roster.append(("dire", slot - 128, p.get("account_id"), hero_id, items))
     return roster
 
 
@@ -248,6 +256,11 @@ class PlayerStats:
     winrate: float = None
     recent_matches: list = field(default_factory=list)  # list[RecentMatch], newest first, max 10
     top_heroes: list = field(default_factory=list)
+    # Only populated by app.py's last-match-recap path (fetch_match_roster
+    # is the only source with per-match item data) - empty for self-stats/
+    # profile-lookup, which aren't about one specific match. 7 raw item_ids
+    # (6 inventory slots + neutral item), 0 = empty slot.
+    items: list = field(default_factory=list)
     dotabuff_url: str = ""
     # Set only when hidden=True: WHY there's no data, so a caller can tell
     # "OpenDota is down/rate-limited, try again shortly" apart from a

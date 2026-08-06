@@ -29,6 +29,8 @@ FACTION_ICON_URLS = {
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 _hero_internal_names = None
+_item_internal_names = None
+ITEM_ICON_BASE = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items"
 
 
 def _get_hero_internal_name(hero_id):
@@ -39,6 +41,18 @@ def _get_hero_internal_name(hero_id):
             h["id"]: h["name"].removeprefix("npc_dota_hero_") for h in heroes
         }
     return _hero_internal_names.get(hero_id)
+
+
+def _get_item_internal_name(item_id):
+    # /constants/item_ids maps numeric item_id (the same numbers matches
+    # store in item_0..item_5) to the internal name the icon CDN expects -
+    # confirmed live against a real match's item_0 (1097 -> "disperser",
+    # a real fetchable icon). item_id 0 means an empty slot, not a real item.
+    global _item_internal_names
+    if _item_internal_names is None:
+        raw = _cached_get("/constants/item_ids", ttl=3600 * 24) or {}
+        _item_internal_names = {int(k): v for k, v in raw.items()}
+    return _item_internal_names.get(item_id)
 
 
 def _download(url, dest_path):
@@ -73,6 +87,16 @@ def get_hero_icon_path(hero_id):
         return None
     dest = os.path.join(CACHE_DIR, f"hero_icon_{hero_id}.png")
     return _download(f"{HERO_ICON_BASE}/{name}.png", dest)
+
+
+def get_item_icon_path(item_id):
+    if not item_id:  # 0 (or None) means an empty inventory slot
+        return None
+    name = _get_item_internal_name(item_id)
+    if not name:
+        return None
+    dest = os.path.join(CACHE_DIR, f"item_icon_{item_id}.png")
+    return _download(f"{ITEM_ICON_BASE}/{name}.png", dest)
 
 
 def get_rank_icon_path(rank_tier):

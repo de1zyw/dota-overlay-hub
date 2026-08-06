@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 import config
 import error_codes
 import window_position
-from assets import get_faction_icon_path, get_hero_icon_path, get_rank_icon_path
+from assets import get_faction_icon_path, get_hero_icon_path, get_item_icon_path, get_rank_icon_path
 
 ACCENT_PINK = QColor("#FF9CE3")
 ACCENT_BLUE = QColor("#7DD3FC")
@@ -298,7 +298,35 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
     )
     layout.addWidget(text_label)
     layout.addStretch()
-    return row
+
+    if not (expanded and any(stats.items)):
+        return row
+
+    # Item build (last-match recap only - stats.items is empty for
+    # self-stats/profile-lookup/live-draft, which aren't about one
+    # specific match) - wraps the already-built row instead of
+    # restructuring it internally, so the row's own styling (the "is
+    # you" gold border above) is untouched.
+    container = QWidget()
+    container.setStyleSheet("background: transparent;")
+    outer = QVBoxLayout(container)
+    outer.setContentsMargins(0, 0, 0, 0)
+    outer.setSpacing(2)
+    outer.addWidget(row)
+
+    items_row = QWidget()
+    items_row.setStyleSheet("background: transparent;")
+    items_layout = QHBoxLayout(items_row)
+    items_layout.setContentsMargins(8, 0, 4, 4)
+    items_layout.setSpacing(3)
+    for item_id in stats.items:
+        icon_path = get_item_icon_path(item_id)
+        if icon_path:
+            items_layout.addWidget(_icon_label(icon_path, 20))
+    items_layout.addStretch()
+    outer.addWidget(items_row)
+
+    return container
 
 
 class OverlayWindow(QWidget):

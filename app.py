@@ -24,7 +24,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon
@@ -374,25 +374,29 @@ class OverlayApp:
             self.bridge.last_match_ready.emit({"radiant": None, "dire": None, "reason": "not_ready"})
             return
 
-        account_ids = [aid for _, _, aid, _ in roster if aid is not None]
+        account_ids = [aid for _, _, aid, _, _ in roster if aid is not None]
         stats_by_id = dict(zip(account_ids, self.executor.map(fetch_player_stats, account_ids)))
 
-        def _stats_for(account_id, hero_id):
+        def _stats_for(account_id, hero_id, items):
             if account_id is None:
                 # OpenDota itself doesn't have an account_id for this player
                 # (their profile is private even in match data) - nothing to
                 # fetch, build a hidden placeholder directly rather than
                 # calling fetch_player_stats(None).
-                return PlayerStats(account_id=0, nickname="[скрыт]", hidden=True, dotabuff_url="")
-            return stats_by_id[account_id]
+                return PlayerStats(account_id=0, nickname="[скрыт]", hidden=True, dotabuff_url="", items=items)
+            # replace(), not mutating stats_by_id[account_id] in place -
+            # that object may also be sitting in opendota_client's own
+            # fallback cache, and items belongs to THIS match only, not to
+            # the account in general.
+            return replace(stats_by_id[account_id], items=items)
 
-        radiant = [_stats_for(aid, hero_id) for team, _, aid, hero_id in roster if team == "radiant"]
-        dire = [_stats_for(aid, hero_id) for team, _, aid, hero_id in roster if team == "dire"]
+        radiant = [_stats_for(aid, hero_id, items) for team, _, aid, hero_id, items in roster if team == "radiant"]
+        dire = [_stats_for(aid, hero_id, items) for team, _, aid, hero_id, items in roster if team == "dire"]
         # Built straight from roster, not by zipping against radiant/dire -
         # those two are reordered (all radiant first, then all dire) relative
         # to roster's original per-player order, so zipping them together
         # would silently pair the wrong hero_id with the wrong account_id.
-        current_picks = {aid: hero_id for _, _, aid, hero_id in roster if aid is not None}
+        current_picks = {aid: hero_id for _, _, aid, hero_id, _ in roster if aid is not None}
 
         event_log.log("LAST_MATCH_RESULT", stage="ready", match_id=match_id)
         self.bridge.last_match_ready.emit({"radiant": radiant, "dire": dire, "reason": None, "current_picks": current_picks})
