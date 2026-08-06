@@ -101,6 +101,13 @@ class PlayerStatsWindow(QWidget):
 
         header = QHBoxLayout()
         header.addWidget(_icon_label(get_rank_icon_path(stats.rank_tier), RANK_ICON_SIZE))
+        if stats.leaderboard_rank is not None:
+            leaderboard_badge = QLabel(f"Топ #{stats.leaderboard_rank}")
+            leaderboard_badge.setStyleSheet(
+                f"color: {config.COLOR_GREEN}; font-family: sans-serif; "
+                "font-size: 11px; font-weight: bold;"
+            )
+            header.addWidget(leaderboard_badge)
         nickname = QLabel(stats.nickname)
         nickname.setStyleSheet(
             "color: white; font-weight: bold; font-family: sans-serif; font-size: 20px;"

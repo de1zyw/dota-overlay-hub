@@ -216,6 +216,11 @@ class PlayerStats:
     nickname: str
     hidden: bool
     rank_tier: int = None
+    # Non-null only for top-tier leaderboard players - confirmed live that
+    # exact MMR (mmr_estimate/competitive_rank/solo_competitive_rank) is
+    # None for a normal account, Valve stopped exposing it publicly in
+    # 2019. This is the only additional real rank signal OpenDota has.
+    leaderboard_rank: int = None
     total_games: int = 0
     winrate: float = None
     recent_matches: list = field(default_factory=list)  # list[RecentMatch], newest first, max 10
@@ -304,7 +309,8 @@ def fetch_player_stats(account_id):
 
     stats = PlayerStats(
         account_id=account_id, nickname=nickname, hidden=hidden,
-        rank_tier=profile.get("rank_tier"), total_games=total_games, winrate=winrate,
+        rank_tier=profile.get("rank_tier"), leaderboard_rank=profile.get("leaderboard_rank"),
+        total_games=total_games, winrate=winrate,
         recent_matches=recent_matches, top_heroes=top_heroes, dotabuff_url=dotabuff_url,
     )
     if not hidden:
