@@ -21,7 +21,14 @@ import config
 import mod_catalog
 import mod_language_settings
 
-DOTA_GAME_DIR = os.path.dirname(config.SERVER_LOG_PATH)
+DOTA_GAME_DIR = os.path.dirname(config.SERVER_LOG_PATH)  # .../dota 2 beta/game/dota
+# dota_<language> add-on folders are siblings of "dota" itself, directly
+# under "game" - confirmed against a real install (game/dota_russian,
+# game/dota_lv, game/dota_schinese all sit next to game/dota, none of them
+# nested inside it). An earlier version of this file put MODS_DIR one
+# level too deep (inside game/dota/) - real installs made through that
+# version never actually worked, Dota was never looking there.
+_ADDON_ROOT_DIR = os.path.dirname(DOTA_GAME_DIR)  # .../dota 2 beta/game
 
 _MANIFEST_PATH = os.path.join(os.path.dirname(__file__), "installed_mods.json")
 
@@ -36,7 +43,7 @@ def get_mods_dir(language=None):
     """The dota_<language> folder mods actually get written to - a
     function, not a constant, so changing the language setting (see
     set_language()) takes effect immediately without an app restart."""
-    return os.path.join(DOTA_GAME_DIR, f"dota_{language or get_language()}")
+    return os.path.join(_ADDON_ROOT_DIR, f"dota_{language or get_language()}")
 
 
 def get_launch_option(language=None):
