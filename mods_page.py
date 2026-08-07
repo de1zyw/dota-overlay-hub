@@ -15,6 +15,7 @@ _ModsPage._selected, keyed by (category_id, mod_name), independent of any
 one _ModCard's lifetime since the grid is rebuilt on every category/search
 change)."""
 import os
+import subprocess
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap
@@ -694,6 +695,24 @@ class _ModsPage(QWidget):
         copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         copy_btn.clicked.connect(self._copy_launch_option)
         footer_layout.addWidget(copy_btn)
+
+        open_folder_btn = QPushButton("Открыть папку модов")
+        open_folder_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_folder_btn.clicked.connect(self._open_mods_folder)
+        footer_layout.addWidget(open_folder_btn)
+
+        # Same right-edge, highest-visual-weight placement as the
+        # reference Mod Manager's own "▶ Играть" button - launches Dota
+        # straight through Steam's own protocol handler (steamapps' own
+        # launch machinery, incl. whatever -language/launch options are
+        # already configured in Steam - this button doesn't duplicate or
+        # bypass that).
+        play_btn = QPushButton("▶ Играть")
+        play_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        play_btn.clicked.connect(self._launch_dota)
+        footer_layout.addWidget(play_btn)
         layout.addWidget(footer)
 
         self._refresh_footer()
@@ -772,6 +791,18 @@ class _ModsPage(QWidget):
 
     def _copy_launch_option(self):
         QApplication.clipboard().setText(mod_manager.get_launch_option())
+
+    def _open_mods_folder(self):
+        mods_dir = mod_manager.get_mods_dir()
+        os.makedirs(mods_dir, exist_ok=True)
+        subprocess.Popen(["xdg-open", mods_dir])
+
+    def _launch_dota(self):
+        # steam://rungameid/<appid> is Steam's own documented protocol
+        # handler - goes through Steam's normal launch path (whatever
+        # launch options/compat tool are already configured there), not a
+        # separate/duplicate way of starting the game.
+        subprocess.Popen(["xdg-open", "steam://rungameid/570"])
 
     def _on_save_language(self):
         new_language = self._language_field.text().strip()
