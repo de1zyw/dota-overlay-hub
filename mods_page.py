@@ -1,7 +1,12 @@
 """МОДЫ tab: browses the open Dota2PornFx mod catalog (mod_catalog.py) and
-installs/removes cosmetic mods via mod_manager.py. Preview downloads and
-install/uninstall both hit the network - each runs on its own throwaway
-QThread so neither ever blocks the Qt event loop.
+installs/removes cosmetic mods via mod_manager.py. Layout borrows the
+official Dota2PornFx Mod Manager's visual language (grouped sidebar with
+counts, a "recently added" carousel, big category tiles, a persistent
+status footer) but reskinned entirely in this app's own dark/pink-purple-
+blue palette (ui_common.py) - none of their colors, just their structure.
+
+Preview downloads and install/uninstall both hit the network - each runs
+on its own throwaway QThread so neither ever blocks the Qt event loop.
 
 Mods can be installed one at a time (each card's own button) or picked
 via checkbox across any number of categories and installed in one batch
@@ -16,7 +21,7 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QStackedWidget, QVBoxLayout, QWidget,
 )
 
 import mod_catalog
@@ -71,6 +76,32 @@ MODS_PER_PAGE = 60
 CARD_WIDTH = 150
 PREVIEW_HEIGHT = 100
 GRID_COLUMNS = 4
+
+# Purely a sidebar grouping label - the catalog itself has no group/section
+# concept beyond the flat category list, this mirrors the official Mod
+# Manager's ГЕРОИ/МИР/ЭФФЕКТЫ/etc sidebar sections for readability. Any
+# category not listed here (e.g. a new one the catalog adds later) falls
+# through to "ПРОЧЕЕ" rather than silently vanishing from the sidebar.
+_CATEGORY_GROUPS = {
+    "heroes": "ГЕРОИ", "hero-items": "ГЕРОИ", "herofx": "ГЕРОИ", "hero-sounds": "ГЕРОИ",
+    "terrains": "МИР", "trees": "МИР", "river": "МИР", "roshan": "МИР",
+    "ancient": "МИР", "tormentor": "МИР", "towers": "МИР", "wards": "МИР",
+    "couriers": "МИР", "creeps": "МИР", "creep-deny": "МИР", "backgrounds": "МИР",
+    "versus-screens": "МИР", "huds": "МИР", "pedestal": "МИР",
+    "shaders": "ЭФФЕКТЫ", "ti-bp-effects": "ЭФФЕКТЫ", "item-effects": "ЭФФЕКТЫ",
+    "ranged-attack": "ЭФФЕКТЫ", "pings": "ЭФФЕКТЫ", "mega-kill": "ЭФФЕКТЫ",
+    "high-five": "ЭФФЕКТЫ",
+    "sounds": "АУДИО", "announcers": "АУДИО", "music": "АУДИО",
+}
+_GROUP_ORDER = ["ГЕРОИ", "МИР", "ЭФФЕКТЫ", "АУДИО", "ПРОЧЕЕ"]
+_FALLBACK_GROUP = "ПРОЧЕЕ"
+
+TILE_WIDTH = 200
+TILE_HEIGHT = 120
+TILE_COLUMNS = 4
+RECENT_CARD_WIDTH = 150
+RECENT_CARD_IMAGE_HEIGHT = 90
+RECENT_LIMIT = 12
 
 
 class _BatchInstallWorker(QThread):
@@ -224,77 +255,199 @@ def _os_toggle_button(text, active):
     return btn
 
 
-class _ModsPage(QWidget):
-    def __init__(self):
+class _ImageTile(QFrame):
+    """Shared base for the landing page's two image-backed widgets (big
+    category tiles, small recently-added cards): a background QLabel
+    (category/mod artwork, loaded async), optionally with a bottom
+    gradient title strip and/or a small corner count badge stacked on top
+    via absolute geometry - fixed-size widgets only, so there's no resize
+    handling to do."""
+    def __init__(self, width, height, title=None, badge=None):
         super().__init__()
+        self.setFixedSize(width, height)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setObjectName("imageTile")
+        self.setStyleSheet(
+            "QFrame#imageTile { background-color: rgba(255,255,255,8); border-radius: 10px; }"
+            "QFrame#imageTile:hover { background-color: rgba(255,255,255,16); }"
+        )
+
+        self._bg_label = QLabel(self)
+        self._bg_label.setGeometry(0, 0, width, height)
+        self._bg_label.setScaledContents(True)
+
+        # Category tile artwork already has its own name baked in by the
+        # catalog's own designer (confirmed by eye - "Shaders" etc is
+        # literally part of the image) - a title strip here is only used
+        # for mods whose preview is a plain gameplay screenshot with no
+        # text of its own (recently-added cards).
+        if title:
+            text_bg = QWidget(self)
+            text_bg.setGeometry(0, height - 34, width, 34)
+            text_bg.setStyleSheet(
+                "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+                "stop:0 rgba(15,15,20,0), stop:1 rgba(15,15,20,215));"
+            )
+            text_layout = QVBoxLayout(text_bg)
+            text_layout.setContentsMargins(8, 4, 8, 4)
+            name_label = QLabel(title)
+            name_label.setWordWrap(False)
+            name_label.setStyleSheet(
+                "color: white; font-family: sans-serif; font-size: 11px; "
+                "font-weight: 700; background: transparent;"
+            )
+            text_layout.addWidget(name_label)
+
+        if badge:
+            badge_label = QLabel(badge, self)
+            badge_label.setStyleSheet(
+                "background-color: rgba(15,15,20,180); color: #dddddd; "
+                "font-family: sans-serif; font-size: 10px; font-weight: 700; "
+                "border-radius: 8px; padding: 2px 8px;"
+            )
+            badge_label.adjustSize()
+            badge_label.move(width - badge_label.width() - 8, 8)
+
+    def _set_preview_pixmap(self, path):
+        if not isinstance(path, str) or not os.path.exists(path):
+            return
+        pixmap = QPixmap(path)
+        if pixmap.isNull():
+            return
+        self._bg_label.setPixmap(pixmap)
+
+
+class _CategoryTile(_ImageTile):
+    def __init__(self, category, count, on_click):
+        badge = f"{count} модов" if count != 1 else "1 мод"
+        super().__init__(TILE_WIDTH, TILE_HEIGHT, badge=badge)
+        self._on_click = on_click
+        self._category_id = category["id"]
+        self._worker = None
+        preview = category.get("preview")
+        if preview:
+            self._worker = _Worker(lambda: mod_catalog.get_category_preview_path(preview))
+            self._worker.done.connect(self._set_preview_pixmap)
+            self._worker.start()
+
+    def mousePressEvent(self, event):
+        self._on_click(self._category_id)
+        super().mousePressEvent(event)
+
+
+class _RecentCard(_ImageTile):
+    def __init__(self, category_id, mod, on_click):
+        super().__init__(RECENT_CARD_WIDTH, RECENT_CARD_IMAGE_HEIGHT + 30, title=mod["name"])
+        self._on_click = on_click
+        self._category_id = category_id
+        self._worker = None
+        preview = mod.get("preview")
+        if preview:
+            self._worker = _Worker(lambda: mod_catalog.get_preview_path(category_id, preview))
+            self._worker.done.connect(self._set_preview_pixmap)
+            self._worker.start()
+
+    def mousePressEvent(self, event):
+        self._on_click(self._category_id)
+        super().mousePressEvent(event)
+
+
+def _flow_grid(widgets, columns):
+    host = QWidget()
+    grid = QGridLayout(host)
+    grid.setSpacing(10)
+    grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+    for i, w in enumerate(widgets):
+        grid.addWidget(w, i // columns, i % columns)
+    return host
+
+
+class _LandingPage(QWidget):
+    """"Все категории" landing view: a recently-added carousel up top, a
+    grid of big category tiles below - the entry point before drilling
+    into any one category's own mod grid."""
+    def __init__(self, on_select_category):
+        super().__init__()
+        self._on_select_category = on_select_category
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+
+        recent = mod_catalog.get_recently_added(RECENT_LIMIT)
+        if recent:
+            recent_title = QLabel("НЕДАВНО ДОБАВЛЕННЫЕ")
+            recent_title.setStyleSheet(
+                "color: #999999; font-family: sans-serif; font-size: 11px; "
+                "font-weight: 700; letter-spacing: 1px;"
+            )
+            layout.addWidget(recent_title)
+
+            carousel_host = QWidget()
+            carousel_layout = QHBoxLayout(carousel_host)
+            carousel_layout.setContentsMargins(0, 0, 0, 0)
+            carousel_layout.setSpacing(10)
+            for entry in recent:
+                carousel_layout.addWidget(
+                    _RecentCard(entry["category"], entry["mod"], self._on_select_category)
+                )
+            carousel_layout.addStretch()
+            carousel_scroll = QScrollArea()
+            carousel_scroll.setWidget(carousel_host)
+            carousel_scroll.setWidgetResizable(True)
+            carousel_scroll.setFrameShape(QFrame.Shape.NoFrame)
+            carousel_scroll.setFixedHeight(RECENT_CARD_IMAGE_HEIGHT + 30 + 16)
+            carousel_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            carousel_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            carousel_scroll.setStyleSheet(
+                "QScrollArea { background: transparent; } "
+                "QScrollArea > QWidget > QWidget { background: transparent; }"
+            )
+            layout.addWidget(carousel_scroll)
+
+        categories_title = QLabel("КАТЕГОРИИ")
+        categories_title.setStyleSheet(
+            "color: #999999; font-family: sans-serif; font-size: 11px; "
+            "font-weight: 700; letter-spacing: 1px;"
+        )
+        layout.addWidget(categories_title)
+
+        tiles = [
+            _CategoryTile(cat, len(mod_catalog.get_mods(cat["id"])), self._on_select_category)
+            for cat in mod_catalog.get_categories()
+        ]
+        tile_grid = _flow_grid(tiles, TILE_COLUMNS)
+        tiles_scroll = QScrollArea()
+        tiles_scroll.setWidget(tile_grid)
+        tiles_scroll.setWidgetResizable(True)
+        tiles_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        tiles_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; } "
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
+        layout.addWidget(tiles_scroll, 1)
+
+
+class _CategoryPage(QWidget):
+    """One category's own browsable mod grid - search, multi-select
+    checkboxes, batch install. Everything below the sidebar/landing page
+    that used to be _ModsPage's own body before the redesign."""
+    def __init__(self, get_selected, on_toggle, on_batch_install):
+        super().__init__()
+        self._get_selected = get_selected
+        self._on_toggle = on_toggle
+        self._on_batch_install = on_batch_install
         self._current_category = None
         self._all_mods = []
-        # {(category_id, mod_name): mod} - the batch-install queue. Kept
-        # here, not on individual cards, so it survives switching category
-        # (the grid, and every _ModCard in it, gets thrown away and rebuilt
-        # on every category/search change).
-        self._selected = {}
-        self._batch_worker = None
 
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
 
-        self._category_list = QListWidget()
-        self._category_list.setFixedWidth(200)
-        self._category_list.setStyleSheet(
-            "QListWidget { background-color: rgba(255,255,255,10); color: white; "
-            "font-family: sans-serif; font-size: 12px; border: none; border-radius: 6px; }"
-            "QListWidget::item { padding: 6px; }"
-            "QListWidget::item:selected { background-color: rgba(255,255,255,30); }"
+        self._title = QLabel("")
+        self._title.setStyleSheet(
+            "color: white; font-family: sans-serif; font-size: 18px; font-weight: 800;"
         )
-        for cat in mod_catalog.get_categories():
-            item = QListWidgetItem(f"{cat['emoji']}  {cat['name']}")
-            item.setData(Qt.ItemDataRole.UserRole, cat["id"])
-            self._category_list.addItem(item)
-        self._category_list.currentRowChanged.connect(self._on_category_changed)
-        layout.addWidget(self._category_list)
-
-        right = QVBoxLayout()
-        right.setSpacing(8)
-
-        os_bar = QHBoxLayout()
-        os_label = QLabel("Платформа:")
-        os_label.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px;")
-        os_bar.addWidget(os_label)
-        os_bar.addWidget(_os_toggle_button("🐧 Linux", active=True))
-        windows_btn = _os_toggle_button("🔒 Windows", active=False)
-        windows_btn.setToolTip("Скоро — заработает после установки Windows на отдельный диск")
-        os_bar.addWidget(windows_btn)
-        os_bar.addStretch()
-        right.addLayout(os_bar)
-
-        right.addWidget(_ToolsPanel())
-
-        hint_bar = QHBoxLayout()
-        hint = QLabel(
-            "Моды кладутся в отдельную папку Dota и требуют параметр запуска "
-            f"«{mod_manager.LAUNCH_OPTION}» — Steam → Dota 2 → Свойства → Параметры запуска "
-            "(добавляется один раз)."
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px;")
-        hint_bar.addWidget(hint, 1)
-        copy_btn = QPushButton("Скопировать")
-        copy_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
-        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        copy_btn.clicked.connect(self._copy_launch_option)
-        hint_bar.addWidget(copy_btn)
-        right.addLayout(hint_bar)
-
-        if not mod_manager.dota_found():
-            warn = QLabel(
-                f"Папка Dota 2 не найдена ({mod_manager.DOTA_GAME_DIR}) — установка модов "
-                "отключена, пока Dota не будет найдена."
-            )
-            warn.setWordWrap(True)
-            warn.setStyleSheet("color: #e2574c; font-family: sans-serif; font-size: 11px;")
-            right.addWidget(warn)
+        layout.addWidget(self._title)
 
         search_bar = QHBoxLayout()
         self._search = QLineEdit()
@@ -304,20 +457,20 @@ class _ModsPage(QWidget):
             "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 6px 10px; "
             "font-family: sans-serif; font-size: 12px; }"
         )
-        self._search.textChanged.connect(self._on_search_changed)
+        self._search.textChanged.connect(self._rebuild_grid)
         search_bar.addWidget(self._search, 1)
 
         self._clear_selection_btn = QPushButton("Очистить выбор")
         self._clear_selection_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
         self._clear_selection_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._clear_selection_btn.clicked.connect(self._clear_selection)
+        self._clear_selection_btn.clicked.connect(lambda: self._on_batch_install("clear"))
         search_bar.addWidget(self._clear_selection_btn)
 
         self._batch_btn = QPushButton()
         self._batch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._batch_btn.clicked.connect(self._start_batch_install)
+        self._batch_btn.clicked.connect(lambda: self._on_batch_install("install"))
         search_bar.addWidget(self._batch_btn)
-        right.addLayout(search_bar)
+        layout.addLayout(search_bar)
 
         self._grid_host = QWidget()
         self._grid = QGridLayout(self._grid_host)
@@ -331,74 +484,32 @@ class _ModsPage(QWidget):
             "QScrollArea { background: transparent; } "
             "QScrollArea > QWidget > QWidget { background: transparent; }"
         )
-        right.addWidget(scroll, 1)
+        layout.addWidget(scroll, 1)
 
         self._status_label = QLabel("")
         self._status_label.setStyleSheet("color: #888888; font-family: sans-serif; font-size: 11px;")
-        right.addWidget(self._status_label)
+        layout.addWidget(self._status_label)
 
-        layout.addLayout(right, 1)
+        self.refresh_batch_button()
 
-        self._update_batch_button()
-        if self._category_list.count():
-            self._category_list.setCurrentRow(0)
-
-    def _copy_launch_option(self):
-        QApplication.clipboard().setText(mod_manager.LAUNCH_OPTION)
-
-    def _on_category_changed(self, row):
-        item = self._category_list.item(row)
-        if item is None:
-            return
-        self._current_category = item.data(Qt.ItemDataRole.UserRole)
-        self._all_mods = mod_catalog.get_mods(self._current_category)
+    def show_category(self, category):
+        self._current_category = category["id"]
+        self._title.setText(f"{category['emoji']}  {category['name']}")
+        self._all_mods = mod_catalog.get_mods(category["id"])
         self._search.blockSignals(True)
         self._search.clear()
         self._search.blockSignals(False)
         self._rebuild_grid()
 
-    def _on_search_changed(self, _text):
-        self._rebuild_grid()
-
-    def _on_card_toggle(self, category_id, mod, checked):
-        key = (category_id, mod["name"])
-        if checked:
-            self._selected[key] = mod
-        else:
-            self._selected.pop(key, None)
-        self._update_batch_button()
-
-    def _update_batch_button(self):
-        count = len(self._selected)
+    def refresh_batch_button(self):
+        count = len(self._get_selected())
         self._batch_btn.setText(f"Установить выбранное ({count})" if count else "Установить выбранное")
         self._batch_btn.setEnabled(count > 0)
         self._batch_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
         self._clear_selection_btn.setEnabled(count > 0)
 
-    def _clear_selection(self):
-        self._selected = {}
-        self._update_batch_button()
-        self._rebuild_grid()
-
-    def _start_batch_install(self):
-        jobs = list(self._selected.items())
-        if not jobs:
-            return
-        self._batch_btn.setEnabled(False)
-        self._clear_selection_btn.setEnabled(False)
-        self._batch_worker = _BatchInstallWorker([(cat, mod) for (cat, _name), mod in jobs])
-        self._batch_worker.progress.connect(self._on_batch_progress)
-        self._batch_worker.finished_all.connect(self._on_batch_finished)
-        self._batch_worker.start()
-
-    def _on_batch_progress(self, done, total, mod_name, ok):
-        verdict = "OK" if ok else "ошибка"
-        self._status_label.setText(f"Установка {done}/{total}: {mod_name} — {verdict}")
-
-    def _on_batch_finished(self):
-        self._selected = {}
-        self._update_batch_button()
-        self._rebuild_grid()
+    def set_status(self, text):
+        self._status_label.setText(text)
 
     def _rebuild_grid(self):
         while self._grid.count():
@@ -414,13 +525,14 @@ class _ModsPage(QWidget):
             if query else self._all_mods
         )
 
+        selected = self._get_selected()
         shown = filtered[:MODS_PER_PAGE]
         for i, mod in enumerate(shown):
             key = (self._current_category, mod["name"])
             card = _ModCard(
                 self._current_category, mod,
-                checked=key in self._selected,
-                on_toggle=self._on_card_toggle,
+                checked=key in selected,
+                on_toggle=self._on_toggle,
             )
             self._grid.addWidget(card, i // GRID_COLUMNS, i % GRID_COLUMNS)
 
@@ -432,3 +544,239 @@ class _ModsPage(QWidget):
             )
         else:
             self._status_label.setText(f"{len(filtered)} модов")
+
+
+def _sidebar_row_widget(text, count=None, bold=False):
+    row = QWidget()
+    row.setStyleSheet("background: transparent;")
+    row_layout = QHBoxLayout(row)
+    row_layout.setContentsMargins(6, 3, 6, 3)
+    label = QLabel(text)
+    weight = 700 if bold else 500
+    label.setStyleSheet(
+        f"color: {'white' if bold else '#dddddd'}; font-family: sans-serif; "
+        f"font-size: 12px; font-weight: {weight}; background: transparent;"
+    )
+    row_layout.addWidget(label, 1)
+    if count is not None:
+        count_label = QLabel(str(count))
+        count_label.setStyleSheet(
+            "color: #888888; font-family: sans-serif; font-size: 11px; background: transparent;"
+        )
+        row_layout.addWidget(count_label, 0, Qt.AlignmentFlag.AlignRight)
+    return row
+
+
+def _sidebar_header_widget(text):
+    label = QLabel(text)
+    label.setContentsMargins(6, 10, 6, 2)
+    label.setStyleSheet(
+        "color: #777777; font-family: sans-serif; font-size: 10px; "
+        "font-weight: 700; letter-spacing: 1px; background: transparent;"
+    )
+    return label
+
+
+class _ModsPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        # {(category_id, mod_name): mod} - the batch-install queue. Kept
+        # here, not on individual cards, so it survives switching category
+        # (the grid, and every _ModCard in it, gets thrown away and rebuilt
+        # on every category/search change).
+        self._selected = {}
+        self._batch_worker = None
+        self._categories = mod_catalog.get_categories()
+        self._counts = {c["id"]: len(mod_catalog.get_mods(c["id"])) for c in self._categories}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        header = QVBoxLayout()
+        header.setSpacing(2)
+        title = QLabel("МОДЫ ДЛЯ DOTA 2")
+        title.setStyleSheet(
+            "color: white; font-family: sans-serif; font-size: 20px; font-weight: 800;"
+        )
+        header.addWidget(title)
+        total = sum(self._counts.values())
+        subtitle = QLabel(
+            f"{total} модов в {len(self._categories)} категориях · "
+            "открытый каталог Dota2PornFx (github.com/h6rd)"
+        )
+        subtitle.setStyleSheet("color: #999999; font-family: sans-serif; font-size: 11px;")
+        header.addWidget(subtitle)
+        layout.addLayout(header)
+
+        os_bar = QHBoxLayout()
+        os_label = QLabel("Платформа:")
+        os_label.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px;")
+        os_bar.addWidget(os_label)
+        os_bar.addWidget(_os_toggle_button("🐧 Linux", active=True))
+        windows_btn = _os_toggle_button("🔒 Windows", active=False)
+        windows_btn.setToolTip("Скоро — заработает после установки Windows на отдельный диск")
+        os_bar.addWidget(windows_btn)
+        os_bar.addStretch()
+        layout.addLayout(os_bar)
+
+        layout.addWidget(_ToolsPanel())
+
+        body = QHBoxLayout()
+        body.setSpacing(12)
+
+        self._category_list = QListWidget()
+        self._category_list.setFixedWidth(210)
+        self._category_list.setStyleSheet(
+            "QListWidget { background-color: rgba(255,255,255,10); color: white; "
+            "font-family: sans-serif; font-size: 12px; border: none; border-radius: 6px; }"
+            "QListWidget::item { border-radius: 4px; }"
+            "QListWidget::item:selected { background-color: rgba(255,255,255,30); }"
+        )
+        self._build_sidebar()
+        self._category_list.currentRowChanged.connect(self._on_sidebar_row_changed)
+        body.addWidget(self._category_list)
+
+        self._stack = QStackedWidget()
+        self._landing_page = _LandingPage(on_select_category=self._select_category)
+        self._category_page = _CategoryPage(
+            get_selected=lambda: self._selected,
+            on_toggle=self._on_card_toggle,
+            on_batch_install=self._on_category_page_action,
+        )
+        self._stack.addWidget(self._landing_page)
+        self._stack.addWidget(self._category_page)
+        body.addWidget(self._stack, 1)
+
+        layout.addLayout(body, 1)
+
+        footer = QFrame()
+        footer.setObjectName("modsFooter")
+        footer.setStyleSheet(
+            "QFrame#modsFooter { background-color: rgba(255,255,255,6); border-radius: 8px; }"
+        )
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(14, 8, 14, 8)
+        found = mod_manager.dota_found()
+        dot = QLabel("🟢" if found else "🔴")
+        dot.setStyleSheet("background: transparent;")
+        footer_layout.addWidget(dot)
+        status_text = (
+            f"Dota 2 найдена · моды ставятся в {os.path.basename(mod_manager.MODS_DIR)}"
+            if found else f"Dota 2 не найдена ({mod_manager.DOTA_GAME_DIR})"
+        )
+        footer_label = QLabel(status_text)
+        footer_label.setStyleSheet("color: #cccccc; font-family: sans-serif; font-size: 11px; background: transparent;")
+        footer_layout.addWidget(footer_label)
+        footer_layout.addStretch()
+        hint_label = QLabel(f"Параметр запуска: «{mod_manager.LAUNCH_OPTION}»")
+        hint_label.setStyleSheet("color: #999999; font-family: sans-serif; font-size: 11px; background: transparent;")
+        footer_layout.addWidget(hint_label)
+        copy_btn = QPushButton("Скопировать")
+        copy_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        copy_btn.clicked.connect(self._copy_launch_option)
+        footer_layout.addWidget(copy_btn)
+        layout.addWidget(footer)
+
+    def _add_sidebar_item(self, widget, category_id=..., selectable=True):
+        item = QListWidgetItem()
+        if not selectable:
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+        elif category_id is not ...:
+            item.setData(Qt.ItemDataRole.UserRole, category_id)
+        self._category_list.addItem(item)
+        self._category_list.setItemWidget(item, widget)
+        # setItemWidget alone leaves the row's height at QListWidget's
+        # default - without an explicit sizeHint here, taller custom
+        # widgets (or, as first found here, the group headers' own top
+        # margin) get vertically clipped instead of the row growing to fit.
+        item.setSizeHint(widget.sizeHint())
+
+    def _build_sidebar(self):
+        self._add_sidebar_item(
+            _sidebar_row_widget("🗂 Все категории", sum(self._counts.values()), bold=True),
+            category_id=None,
+        )
+
+        grouped = {}
+        for cat in self._categories:
+            grouped.setdefault(_CATEGORY_GROUPS.get(cat["id"], _FALLBACK_GROUP), []).append(cat)
+
+        for group in _GROUP_ORDER:
+            cats = grouped.get(group)
+            if not cats:
+                continue
+            self._add_sidebar_item(_sidebar_header_widget(group), selectable=False)
+            for cat in cats:
+                self._add_sidebar_item(
+                    _sidebar_row_widget(f"{cat['emoji']}  {cat['name']}", self._counts[cat["id"]]),
+                    category_id=cat["id"],
+                )
+
+        self._category_list.setCurrentRow(0)
+
+    def _on_sidebar_row_changed(self, row):
+        item = self._category_list.item(row)
+        if item is None:
+            return
+        category_id = item.data(Qt.ItemDataRole.UserRole)
+        if category_id is None:
+            self._stack.setCurrentWidget(self._landing_page)
+        else:
+            self._select_category(category_id)
+
+    def _select_category(self, category_id):
+        category = next((c for c in self._categories if c["id"] == category_id), None)
+        if category is None:
+            return
+        # Programmatic navigation from a tile/carousel card - keep the
+        # sidebar's own selection in sync so it doesn't silently disagree
+        # with what's actually shown.
+        for row in range(self._category_list.count()):
+            if self._category_list.item(row).data(Qt.ItemDataRole.UserRole) == category_id:
+                self._category_list.blockSignals(True)
+                self._category_list.setCurrentRow(row)
+                self._category_list.blockSignals(False)
+                break
+        self._category_page.show_category(category)
+        self._stack.setCurrentWidget(self._category_page)
+
+    def _copy_launch_option(self):
+        QApplication.clipboard().setText(mod_manager.LAUNCH_OPTION)
+
+    def _on_card_toggle(self, category_id, mod, checked):
+        key = (category_id, mod["name"])
+        if checked:
+            self._selected[key] = mod
+        else:
+            self._selected.pop(key, None)
+        self._category_page.refresh_batch_button()
+
+    def _on_category_page_action(self, action):
+        if action == "clear":
+            self._selected = {}
+            self._category_page.refresh_batch_button()
+            self._category_page._rebuild_grid()
+        elif action == "install":
+            self._start_batch_install()
+
+    def _start_batch_install(self):
+        jobs = list(self._selected.items())
+        if not jobs:
+            return
+        self._category_page._batch_btn.setEnabled(False)
+        self._category_page._clear_selection_btn.setEnabled(False)
+        self._batch_worker = _BatchInstallWorker([(cat, mod) for (cat, _name), mod in jobs])
+        self._batch_worker.progress.connect(self._on_batch_progress)
+        self._batch_worker.finished_all.connect(self._on_batch_finished)
+        self._batch_worker.start()
+
+    def _on_batch_progress(self, done, total, mod_name, ok):
+        verdict = "OK" if ok else "ошибка"
+        self._category_page.set_status(f"Установка {done}/{total}: {mod_name} — {verdict}")
+
+    def _on_batch_finished(self):
+        self._selected = {}
+        self._category_page.refresh_batch_button()
+        self._category_page._rebuild_grid()

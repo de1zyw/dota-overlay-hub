@@ -65,7 +65,9 @@ def _cached_json(url, cache_name, ttl):
 
 
 def get_categories():
-    """Ordered list of {id, emoji, name} for every browsable mod category."""
+    """Ordered list of {id, emoji, name, preview} for every browsable mod
+    category - "preview" is the catalog's own category-tile artwork
+    filename (assets/previews/categories/<preview>), None if it has none."""
     global _categories
     if _categories is not None:
         return _categories
@@ -75,11 +77,20 @@ def get_categories():
     translations = constants.get("translations", {})
     raw_categories = constants.get("categories", [])
     _categories = [
-        {"id": c["id"], "emoji": c.get("emoji", ""), "name": translations.get(c["id"], c["id"])}
+        {
+            "id": c["id"], "emoji": c.get("emoji", ""),
+            "name": translations.get(c["id"], c["id"]), "preview": c.get("preview"),
+        }
         for c in raw_categories
         if c["id"] not in EXCLUDED_CATEGORIES
     ]
     return _categories
+
+
+def get_category_preview_url(preview_filename):
+    if not preview_filename:
+        return None
+    return f"{REPO_BASE}/assets/previews/categories/{preview_filename}"
 
 
 def _flatten_mods(raw):
@@ -119,15 +130,23 @@ def _expand_styles(mods):
     return out
 
 
+_mods_raw = None
+
+
+def _ensure_mods_json():
+    global _mods_data, _mods_raw
+    if _mods_raw is None:
+        _mods_raw = _cached_json(
+            f"{REPO_BASE}/assets/data/mods.json", "mods.json", CATALOG_TTL_SECONDS
+        ) or {}
+        _mods_data = _mods_raw.get("modsData", {})
+    return _mods_raw
+
+
 def get_mods(category_id):
     """All installable mods in one category, groups/styles already
     flattened into a single flat list."""
-    global _mods_data
-    if _mods_data is None:
-        raw = _cached_json(
-            f"{REPO_BASE}/assets/data/mods.json", "mods.json", CATALOG_TTL_SECONDS
-        ) or {}
-        _mods_data = raw.get("modsData", {})
+    _ensure_mods_json()
     return _expand_styles(_flatten_mods(_mods_data.get(category_id)))
 
 
@@ -137,17 +156,9 @@ def get_download_url(category_id, filename):
     return f"{REPO_BASE}/assets/files/{category_id}/{filename}"
 
 
-def get_preview_path(category_id, preview_filename):
-    """Downloads (once, cached forever - previews don't change filename
-    without becoming a different mod entry) and returns a local path for a
-    mod's preview thumbnail. Safe to call from a background thread only -
-    does a blocking network request on a cache miss."""
-    if not preview_filename:
-        return None
-    dest = os.path.join(CACHE_DIR, "previews", category_id, preview_filename)
+def _download_preview(url, dest):
     if os.path.exists(dest):
         return dest
-    url = f"{REPO_BASE}/assets/previews/{category_id}/{preview_filename}"
     try:
         resp = _session.get(url, timeout=10)
         resp.raise_for_status()
@@ -164,3 +175,50 @@ def get_preview_path(category_id, preview_filename):
             os.unlink(tmp_path)
         return None
     return dest
+
+
+def get_preview_path(category_id, preview_filename):
+    """Downloads (once, cached forever - previews don't change filename
+    without becoming a different mod entry) and returns a local path for a
+    mod's preview thumbnail. Safe to call from a background thread only -
+    does a blocking network request on a cache miss."""
+    if not preview_filename:
+        return None
+    dest = os.path.join(CACHE_DIR, "previews", category_id, preview_filename)
+    url = f"{REPO_BASE}/assets/previews/{category_id}/{preview_filename}"
+    return _download_preview(url, dest)
+
+
+def get_category_preview_path(preview_filename):
+    """Same idea as get_preview_path, but for a category tile's own
+    artwork (assets/previews/categories/<preview>)."""
+    if not preview_filename:
+        return None
+    dest = os.path.join(CACHE_DIR, "previews", "categories", preview_filename)
+    url = get_category_preview_url(preview_filename)
+    return _download_preview(url, dest)
+
+
+def get_recently_added(limit=12):
+    """Resolves the catalog's own recentlyAddedMods list (just {name,
+    category} references) against each category's full mod list to get
+    the actual preview/file - skips entries whose category we don't
+    browse (tools/guides/etc) or whose name can't be matched (renamed or
+    removed since the reference was last generated)."""
+    raw = _ensure_mods_json()
+    entries = raw.get("recentlyAddedMods", [])
+    browsable = {c["id"] for c in get_categories()}
+    out = []
+    for entry in entries:
+        category_id = entry.get("category")
+        if category_id not in browsable:
+            continue
+        mod = next(
+            (m for m in get_mods(category_id) if m["name"] == entry.get("name")), None
+        )
+        if mod is None:
+            continue
+        out.append({"category": category_id, "mod": mod})
+        if len(out) >= limit:
+            break
+    return out
