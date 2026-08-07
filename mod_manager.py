@@ -19,14 +19,77 @@ import requests
 
 import config
 import mod_catalog
+import mod_language_settings
 
 DOTA_GAME_DIR = os.path.dirname(config.SERVER_LOG_PATH)
-MODS_DIR = os.path.join(DOTA_GAME_DIR, "dota_custom")
-LAUNCH_OPTION = "-language custom"
 
 _MANIFEST_PATH = os.path.join(os.path.dirname(__file__), "installed_mods.json")
 
 _session = requests.Session()
+
+
+def get_language():
+    return mod_language_settings.load()
+
+
+def get_mods_dir(language=None):
+    """The dota_<language> folder mods actually get written to - a
+    function, not a constant, so changing the language setting (see
+    set_language()) takes effect immediately without an app restart."""
+    return os.path.join(DOTA_GAME_DIR, f"dota_{language or get_language()}")
+
+
+def get_launch_option(language=None):
+    return f"-language {language or get_language()}"
+
+
+def set_language(new_language, migrate=True):
+    """Switches the -language slot the МОДЫ tab installs into. If
+    `migrate` is True (the default), every file this app has ever
+    installed is physically moved from the OLD dota_<language> folder to
+    the new one - without this, is_installed()/uninstall_mod() would keep
+    reporting old installs as present while actually looking in the wrong
+    (new) folder, and Dota would stop seeing them under the new -language
+    launch option too. Returns (ok, message)."""
+    if not mod_language_settings.is_valid(new_language):
+        return False, "Недопустимое имя (буквы/цифры/дефис/подчёркивание, до 32 символов)"
+    old_language = get_language()
+    if new_language == old_language:
+        return True, "Без изменений"
+
+    if migrate:
+        old_dir = get_mods_dir(old_language)
+        new_dir = get_mods_dir(new_language)
+        manifest = _load_manifest()
+        all_files = [f for entry in manifest.values() for f in entry["files"]]
+        if all_files:
+            try:
+                os.makedirs(new_dir, exist_ok=True)
+            except OSError as exc:
+                return False, f"Не удалось создать новую папку: {exc}"
+            moved = []
+            for fname in all_files:
+                src = os.path.join(old_dir, fname)
+                if not os.path.exists(src):
+                    continue
+                try:
+                    shutil.move(src, os.path.join(new_dir, fname))
+                    moved.append(fname)
+                except OSError as exc:
+                    for m in moved:
+                        _safe_move_back(os.path.join(new_dir, m), os.path.join(old_dir, m))
+                    return False, f"Не удалось перенести {fname}: {exc}"
+
+    if not mod_language_settings.save(new_language):
+        return False, "Не удалось сохранить настройку"
+    return True, f"Готово — теперь моды ставятся в dota_{new_language}"
+
+
+def _safe_move_back(src, dst):
+    try:
+        shutil.move(src, dst)
+    except OSError:
+        pass
 
 
 def dota_found():
@@ -146,8 +209,9 @@ def install_mod(category_id, mod):
     if not vpk_blobs:
         return False, "В архиве мода не найдено .vpk"
 
+    mods_dir = get_mods_dir()
     try:
-        os.makedirs(MODS_DIR, exist_ok=True)
+        os.makedirs(mods_dir, exist_ok=True)
     except OSError as exc:
         return False, f"Не удалось создать папку модов: {exc}"
 
@@ -157,14 +221,14 @@ def install_mod(category_id, mod):
 
     written = []
     for name, blob in zip(names, vpk_blobs):
-        dest = os.path.join(MODS_DIR, name)
+        dest = os.path.join(mods_dir, name)
         try:
             with open(dest, "wb") as f:
                 f.write(blob)
             written.append(name)
         except OSError as exc:
             for w in written:
-                _safe_remove(os.path.join(MODS_DIR, w))
+                _safe_remove(os.path.join(mods_dir, w))
             return False, f"Ошибка записи: {exc}"
 
     manifest = _load_manifest()
@@ -181,8 +245,9 @@ def uninstall_mod(category_id, mod_name):
     entry = manifest.pop(key, None)
     if entry is None:
         return True, "Не был установлен"
+    mods_dir = get_mods_dir()
     for fname in entry["files"]:
-        _safe_remove(os.path.join(MODS_DIR, fname))
+        _safe_remove(os.path.join(mods_dir, fname))
     _save_manifest(manifest)
     return True, "Удалён"
 
@@ -197,8 +262,9 @@ def install_from_files(category_id, display_name, source_paths):
         return False, "Папка Dota 2 не найдена"
     if not source_paths:
         return False, "Нет файлов для установки"
+    mods_dir = get_mods_dir()
     try:
-        os.makedirs(MODS_DIR, exist_ok=True)
+        os.makedirs(mods_dir, exist_ok=True)
     except OSError as exc:
         return False, f"Не удалось создать папку модов: {exc}"
 
@@ -210,13 +276,13 @@ def install_from_files(category_id, display_name, source_paths):
     written = []
     for path, suffix in zip(source_paths, suffixes):
         new_name = f"{new_prefix}{suffix}"
-        dest = os.path.join(MODS_DIR, new_name)
+        dest = os.path.join(mods_dir, new_name)
         try:
             shutil.copy2(path, dest)
             written.append(new_name)
         except OSError as exc:
             for w in written:
-                _safe_remove(os.path.join(MODS_DIR, w))
+                _safe_remove(os.path.join(mods_dir, w))
             return False, f"Ошибка записи: {exc}"
 
     manifest = _load_manifest()

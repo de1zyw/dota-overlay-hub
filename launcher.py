@@ -2,6 +2,24 @@
 launch, per overlay entry) and a Logs page (browse past diagnostic runs).
 Same dark-gradient visual style as the overlay itself."""
 import os
+
+# Forces Qt's X11 (XWayland) backend instead of native Wayland - set
+# BEFORE any PyQt import triggers platform-plugin selection (that happens
+# lazily at QApplication() construction, not at import time, but this is
+# set as early as possible to be unambiguous). Root cause: Wayland's own
+# protocol gives the COMPOSITOR, not the client, control over where a
+# regular toplevel window sits - self.move() on the overlay/stats windows
+# (window_position.py) is silently ignored under native Wayland (confirmed
+# on this app's own real GNOME/Wayland session - "top right" etc save fine
+# but the window stays wherever the compositor auto-placed it). XWayland
+# preserves real X11 positioning semantics for XWayland clients, so this
+# fixes it without requiring the user to switch their whole login session
+# to X11 (which the README's Wayland section already notes as a fallback,
+# but forcing this one app to xcb gets the same effect automatically).
+# setdefault, not a plain assignment - lets an explicit override (e.g. the
+# offscreen-platform test harness used throughout this project) win.
+os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
 import subprocess
 import sys
 from datetime import datetime

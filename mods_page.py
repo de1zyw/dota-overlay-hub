@@ -20,11 +20,12 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+    QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 import mod_catalog
+import mod_language_settings
 import mod_manager
 from tools_panel import _ToolsPanel
 from ui_common import PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
@@ -657,27 +658,45 @@ class _ModsPage(QWidget):
         )
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(14, 8, 14, 8)
-        found = mod_manager.dota_found()
-        dot = QLabel("🟢" if found else "🔴")
-        dot.setStyleSheet("background: transparent;")
-        footer_layout.addWidget(dot)
-        status_text = (
-            f"Dota 2 найдена · моды ставятся в {os.path.basename(mod_manager.MODS_DIR)}"
-            if found else f"Dota 2 не найдена ({mod_manager.DOTA_GAME_DIR})"
+
+        self._footer_dot = QLabel("")
+        self._footer_dot.setStyleSheet("background: transparent;")
+        footer_layout.addWidget(self._footer_dot)
+        self._footer_status_label = QLabel("")
+        self._footer_status_label.setStyleSheet(
+            "color: #cccccc; font-family: sans-serif; font-size: 11px; background: transparent;"
         )
-        footer_label = QLabel(status_text)
-        footer_label.setStyleSheet("color: #cccccc; font-family: sans-serif; font-size: 11px; background: transparent;")
-        footer_layout.addWidget(footer_label)
+        footer_layout.addWidget(self._footer_status_label)
         footer_layout.addStretch()
-        hint_label = QLabel(f"Параметр запуска: «{mod_manager.LAUNCH_OPTION}»")
-        hint_label.setStyleSheet("color: #999999; font-family: sans-serif; font-size: 11px; background: transparent;")
-        footer_layout.addWidget(hint_label)
+
+        # Editable, not just a static "-language custom" label - lets the
+        # user point installs at a slot they already use for something
+        # else (e.g. "minify" to share dota2-minify-bin's own folder)
+        # instead of being stuck with this app's own default.
+        lang_label = QLabel("-language:")
+        lang_label.setStyleSheet("color: #999999; font-family: sans-serif; font-size: 11px; background: transparent;")
+        footer_layout.addWidget(lang_label)
+        self._language_field = QLineEdit(mod_manager.get_language())
+        self._language_field.setFixedWidth(90)
+        self._language_field.setStyleSheet(
+            "QLineEdit { background-color: rgba(255,255,255,10); color: white; "
+            "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 4px 8px; "
+            "font-family: monospace; font-size: 11px; }"
+        )
+        footer_layout.addWidget(self._language_field)
+        save_lang_btn = QPushButton("Сохранить")
+        save_lang_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        save_lang_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_lang_btn.clicked.connect(self._on_save_language)
+        footer_layout.addWidget(save_lang_btn)
         copy_btn = QPushButton("Скопировать")
         copy_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
         copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         copy_btn.clicked.connect(self._copy_launch_option)
         footer_layout.addWidget(copy_btn)
         layout.addWidget(footer)
+
+        self._refresh_footer()
 
     def _add_sidebar_item(self, widget, category_id=..., selectable=True):
         item = QListWidgetItem()
@@ -742,8 +761,46 @@ class _ModsPage(QWidget):
         self._category_page.show_category(category)
         self._stack.setCurrentWidget(self._category_page)
 
+    def _refresh_footer(self):
+        found = mod_manager.dota_found()
+        self._footer_dot.setText("🟢" if found else "🔴")
+        mods_dir_name = os.path.basename(mod_manager.get_mods_dir())
+        self._footer_status_label.setText(
+            f"Dota 2 найдена · моды ставятся в {mods_dir_name}" if found
+            else f"Dota 2 не найдена ({mod_manager.DOTA_GAME_DIR})"
+        )
+
     def _copy_launch_option(self):
-        QApplication.clipboard().setText(mod_manager.LAUNCH_OPTION)
+        QApplication.clipboard().setText(mod_manager.get_launch_option())
+
+    def _on_save_language(self):
+        new_language = self._language_field.text().strip()
+        if new_language == mod_manager.get_language():
+            return
+        if not mod_language_settings.is_valid(new_language):
+            self._footer_status_label.setText(
+                "Недопустимое имя (буквы/цифры/дефис/подчёркивание, до 32 символов)"
+            )
+            return
+        installed_count = len(mod_manager.list_installed())
+        migrate = True
+        if installed_count:
+            choice = QMessageBox.question(
+                self, "Смена языка модов",
+                f"Сейчас через менеджер установлено модов: {installed_count}. Перенести их файлы "
+                f"в новую папку dota_{new_language}? Если нет — они останутся в старой папке, но "
+                "менеджер перестанет их отслеживать (кнопка «Удалить» перестанет их видеть).",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
+            )
+            if choice == QMessageBox.StandardButton.Cancel:
+                return
+            migrate = choice == QMessageBox.StandardButton.Yes
+        ok, message = mod_manager.set_language(new_language, migrate=migrate)
+        self._footer_status_label.setText(message)
+        if ok:
+            self._refresh_footer()
+            self._category_page._rebuild_grid()
 
     def _on_card_toggle(self, category_id, mod, checked):
         key = (category_id, mod["name"])
