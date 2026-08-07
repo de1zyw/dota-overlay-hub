@@ -95,7 +95,7 @@ def _hero_pick_icon(hero_id):
     label.setFixedSize(HERO_ICON_SIZE, HERO_ICON_SIZE)
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     label.setStyleSheet(
-        "color: #888899; font-family: sans-serif; font-weight: bold; "
+        "color: #888899; font-family: 'Inter'; font-weight: bold; "
         f"font-size: {max(int(HERO_ICON_SIZE * 0.55), 10)}px; "
         "background-color: rgba(255, 255, 255, 18); "
         "border: 1px solid rgba(255, 255, 255, 50); border-radius: 5px;"
@@ -147,7 +147,7 @@ def _match_history_group(recent_matches, show_kda=False):
         entry_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         entry_layout.addWidget(label, 0, Qt.AlignmentFlag.AlignHCenter)
         kda = QLabel(f"{match.kills}/{match.deaths}/{match.assists}")
-        kda.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 9px;")
+        kda.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 9px;")
         kda.setAlignment(Qt.AlignmentFlag.AlignCenter)
         entry_layout.addWidget(kda)
         layout.addWidget(entry)
@@ -265,7 +265,7 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
         else:
             suffix = "профиль скрыт"
         label = QLabel(f"{stats.nickname} — {suffix}")
-        label.setStyleSheet("color: #888899; font-family: sans-serif; font-size: 13px;")
+        label.setStyleSheet("color: #888899; font-family: 'Inter'; font-size: 13px;")
         # Fixed to the same height as the icon-bearing rows below (driven by
         # HERO_ICON_SIZE, the tallest fixed-size widget in a normal row) so a
         # run of hidden-profile rows doesn't collapse to a shorter row height
@@ -284,7 +284,7 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
     # which has room for it and isn't on a tight draft-timer clock.
     nickname_text = f"⚠ {stats.nickname}" if stats.stale else stats.nickname
     nickname_label = QLabel(nickname_text)
-    nickname_style = "color: white; font-family: sans-serif; font-size: 13px; font-weight: 600;"
+    nickname_style = "color: white; font-family: 'Inter'; font-size: 13px; font-weight: 600;"
     if stats.account_id in party_account_ids:
         # Highlight the local client's own party members (see lobby_watcher's
         # module docstring - this can never reveal enemy party groupings).
@@ -306,7 +306,7 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
 
     text_label = QLabel(text)
     text_label.setStyleSheet(
-        f"color: {_winrate_color(stats.winrate)}; font-family: sans-serif; font-size: 13px;"
+        f"color: {_winrate_color(stats.winrate)}; font-family: 'Inter'; font-size: 13px;"
     )
     layout.addWidget(text_label)
     layout.addStretch()
@@ -387,7 +387,7 @@ class OverlayWindow(QWidget):
         color = config.COLOR_GREEN if team == "radiant" else config.COLOR_RED
         label = QLabel(text)
         label.setStyleSheet(
-            f"color: {color}; font-weight: bold; font-family: sans-serif; "
+            f"color: {color}; font-weight: bold; font-family: 'Inter'; "
             "font-size: 12px; letter-spacing: 2px;"
         )
         layout.addWidget(label)

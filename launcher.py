@@ -172,7 +172,7 @@ def _check_item(label, status, message):
     header_layout.addWidget(_status_dot(status), 0, Qt.AlignmentFlag.AlignVCenter)
 
     label_widget = QLabel(label)
-    label_widget.setStyleSheet("color: white; font-family: sans-serif; font-size: 13px; background: transparent;")
+    label_widget.setStyleSheet("color: white; font-family: 'Inter'; font-size: 13px; background: transparent;")
     header_layout.addWidget(label_widget, 0, Qt.AlignmentFlag.AlignVCenter)
     header_layout.addStretch()
     layout.addWidget(header)
@@ -180,7 +180,7 @@ def _check_item(label, status, message):
     if status != STATUS_OK:
         detail = QLabel(message)
         detail.setWordWrap(True)
-        detail.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px; background: transparent;")
+        detail.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px; background: transparent;")
         layout.addWidget(detail)
 
     return item
@@ -197,7 +197,7 @@ class _OverlayCard(QWidget):
         # copy of this background as a stray pill behind it.
         self.setObjectName("overlayCard")
         self.setStyleSheet(
-            "QWidget#overlayCard { background-color: rgba(255, 255, 255, 12); border-radius: 8px; }"
+            "QWidget#overlayCard { background-color: rgba(255, 255, 255, 12); border-radius: 12px; }"
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
@@ -205,17 +205,17 @@ class _OverlayCard(QWidget):
 
         header = QHBoxLayout()
         name = QLabel(entry["name"])
-        name.setStyleSheet("color: white; font-weight: bold; font-family: sans-serif; font-size: 15px;")
+        name.setStyleSheet("color: white; font-weight: bold; font-family: 'Inter'; font-size: 15px;")
         header.addWidget(name)
         header.addStretch()
         self._status_pill = QLabel("")
-        self._status_pill.setStyleSheet("font-family: sans-serif; font-size: 11px; font-weight: bold;")
+        self._status_pill.setStyleSheet("font-family: 'Inter'; font-size: 11px; font-weight: bold;")
         header.addWidget(self._status_pill)
         layout.addLayout(header)
 
         desc = QLabel(entry["description"])
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 12px;")
+        desc.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 12px;")
         layout.addWidget(desc)
 
         self._checks_layout = QVBoxLayout()
@@ -260,7 +260,7 @@ class _OverlayCard(QWidget):
             has_warn = has_warn or status == STATUS_WARN
             self._checks_layout.addWidget(_check_item(label, status, message))
 
-        base_style = "font-family: sans-serif; font-size: 11px; font-weight: bold;"
+        base_style = "font-family: 'Inter'; font-size: 11px; font-weight: bold;"
         if has_error:
             self._status_pill.setText("НЕ ГОТОВО")
             self._status_pill.setStyleSheet(f"{base_style} color: {config.COLOR_RED};")
@@ -282,7 +282,7 @@ class _ComingSoonCard(QWidget):
         super().__init__()
         self.setObjectName("comingSoonCard")
         self.setStyleSheet(
-            "QWidget#comingSoonCard { background-color: rgba(255, 255, 255, 5); border-radius: 8px; "
+            "QWidget#comingSoonCard { background-color: rgba(255, 255, 255, 5); border-radius: 12px; "
             "border: 1px dashed rgba(255, 255, 255, 25); }"
         )
         layout = QVBoxLayout(self)
@@ -291,12 +291,12 @@ class _ComingSoonCard(QWidget):
 
         header = QHBoxLayout()
         name = QLabel(entry["name"])
-        name.setStyleSheet("color: #999999; font-weight: bold; font-family: sans-serif; font-size: 15px; background: transparent;")
+        name.setStyleSheet("color: #999999; font-weight: bold; font-family: 'Inter'; font-size: 15px; background: transparent;")
         header.addWidget(name)
         header.addStretch()
         badge = QLabel("СКОРО")
         badge.setStyleSheet(
-            "color: #888888; font-family: sans-serif; font-size: 10px; font-weight: bold; "
+            "color: #888888; font-family: 'Inter'; font-size: 10px; font-weight: bold; "
             "letter-spacing: 1px; background: transparent;"
         )
         header.addWidget(badge)
@@ -304,7 +304,7 @@ class _ComingSoonCard(QWidget):
 
         desc = QLabel(entry["description"])
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #666666; font-family: sans-serif; font-size: 12px; background: transparent;")
+        desc.setStyleSheet("color: #666666; font-family: 'Inter'; font-size: 12px; background: transparent;")
         layout.addWidget(desc)
 
 
@@ -342,7 +342,7 @@ class _LogsPage(QWidget):
         self._list.setFixedWidth(260)
         self._list.setStyleSheet(
             "QListWidget { background-color: rgba(255,255,255,10); color: white; "
-            "font-family: sans-serif; font-size: 12px; border: none; border-radius: 6px; }"
+            "font-family: 'Inter'; font-size: 12px; border: none; border-radius: 6px; }"
             "QListWidget::item { padding: 6px; }"
             "QListWidget::item:selected { background-color: rgba(255,255,255,30); }"
         )
@@ -429,7 +429,7 @@ class _SettingsPage(QWidget):
         layout.setSpacing(10)
 
         title = QLabel("Настройки хоткеев")
-        title.setStyleSheet("color: white; font-weight: bold; font-family: sans-serif; font-size: 14px;")
+        title.setStyleSheet("color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px;")
         layout.addWidget(title)
 
         current = hotkey_settings.load()
@@ -438,7 +438,7 @@ class _SettingsPage(QWidget):
             row = QHBoxLayout()
             label = QLabel(label_text)
             label.setFixedWidth(160)
-            label.setStyleSheet("color: #cccccc; font-family: sans-serif; font-size: 12px;")
+            label.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 12px;")
             row.addWidget(label)
 
             field = QLineEdit(current[key])
@@ -452,7 +452,7 @@ class _SettingsPage(QWidget):
             layout.addLayout(row)
 
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px;")
+        self._status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
         layout.addWidget(self._status_label)
 
         save_btn = QPushButton("Сохранить")
@@ -463,7 +463,7 @@ class _SettingsPage(QWidget):
 
         position_title = QLabel("Расположение оверлея")
         position_title.setStyleSheet(
-            "color: white; font-weight: bold; font-family: sans-serif; font-size: 14px; "
+            "color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px; "
             "margin-top: 12px;"
         )
         layout.addWidget(position_title)
@@ -471,10 +471,10 @@ class _SettingsPage(QWidget):
         current_position = overlay_position_settings.load()
         self._position_group = QButtonGroup(self)
         self._position_status_label = QLabel("")
-        self._position_status_label.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px;")
+        self._position_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
         for position in overlay_position_settings.POSITIONS:
             radio = QRadioButton(overlay_position_settings.POSITION_LABELS[position])
-            radio.setStyleSheet("color: #cccccc; font-family: sans-serif; font-size: 12px;")
+            radio.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 12px;")
             radio.setChecked(position == current_position)
             radio.toggled.connect(lambda checked, p=position: self._on_position_toggled(checked, p))
             self._position_group.addButton(radio)
@@ -513,7 +513,7 @@ class _HistoryPage(QWidget):
         self._list.setFixedWidth(260)
         self._list.setStyleSheet(
             "QListWidget { background-color: rgba(255,255,255,10); color: white; "
-            "font-family: sans-serif; font-size: 12px; border: none; border-radius: 6px; }"
+            "font-family: 'Inter'; font-size: 12px; border: none; border-radius: 6px; }"
             "QListWidget::item { padding: 6px; }"
             "QListWidget::item:selected { background-color: rgba(255,255,255,30); }"
         )
@@ -525,7 +525,7 @@ class _HistoryPage(QWidget):
         self._detail.setTextFormat(Qt.TextFormat.RichText)
         self._detail.setOpenExternalLinks(True)
         self._detail.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._detail.setStyleSheet("color: white; font-family: sans-serif; font-size: 12px;")
+        self._detail.setStyleSheet("color: white; font-family: 'Inter'; font-size: 12px;")
         layout.addWidget(self._detail, 1)
 
         self._entries = []
@@ -591,7 +591,7 @@ class LauncherWindow(QWidget):
 
         title = QLabel("DOTA\nOVERLAY HUB")
         title.setStyleSheet(
-            "color: white; font-weight: bold; font-family: sans-serif; "
+            "color: white; font-weight: bold; font-family: 'Inter'; "
             "font-size: 13px; letter-spacing: 1px;"
         )
         sidebar_layout.addWidget(title)
@@ -616,7 +616,7 @@ class LauncherWindow(QWidget):
             btn.setCheckable(True)
             btn.setStyleSheet(
                 "QPushButton { text-align: left; color: #cccccc; background: transparent; "
-                "border: none; font-family: sans-serif; font-size: 12px; padding: 8px; }"
+                "border: none; font-family: 'Inter'; font-size: 12px; padding: 8px; }"
                 "QPushButton:checked { color: white; font-weight: bold; }"
             )
         nav_buttons = [overlays_btn, mods_btn, logs_btn, settings_btn, history_btn]
@@ -775,6 +775,8 @@ def _acquire_single_instance():
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    import fonts
+    app.setFont(fonts.default_font())
     # Ties this running process to dota-overlay-hub.desktop by name, so the
     # taskbar/dock can look up that entry's Icon= instead of falling back to
     # a generic icon when it can't otherwise correlate the window to it.

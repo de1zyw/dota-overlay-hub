@@ -31,7 +31,7 @@ class _ToolsPanel(QFrame):
         self.setObjectName("toolsPanel")
         self.setStyleSheet(
             "QFrame#toolsPanel { background-color: rgba(255,255,255,6); "
-            "border-radius: 8px; border: 1px dashed rgba(255,255,255,20); }"
+            "border-radius: 12px; border: 1px dashed rgba(255,255,255,20); }"
         )
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 10, 12, 10)
@@ -39,7 +39,7 @@ class _ToolsPanel(QFrame):
 
         title = QLabel("🛠 Инструменты (консольные, github.com/h6rd)")
         title.setStyleSheet(
-            "color: #cccccc; font-family: sans-serif; font-size: 11px; "
+            "color: #cccccc; font-family: 'Inter'; font-size: 11px; "
             "font-weight: 700; background: transparent;"
         )
         outer.addWidget(title)
@@ -78,7 +78,7 @@ class _ToolsPanel(QFrame):
         self._status_label = QLabel("")
         self._status_label.setWordWrap(True)
         self._status_label.setStyleSheet(
-            "color: #999999; font-family: sans-serif; font-size: 10px; background: transparent;"
+            "color: #999999; font-family: 'Inter'; font-size: 10px; background: transparent;"
         )
         outer.addWidget(self._status_label)
 

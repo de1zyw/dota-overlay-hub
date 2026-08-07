@@ -437,5 +437,7 @@ class OverlayApp:
 
 if __name__ == "__main__":
     qt_app = QApplication(sys.argv)
+    import fonts
+    qt_app.setFont(fonts.default_font())
     qt_app.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")))
     OverlayApp().run()

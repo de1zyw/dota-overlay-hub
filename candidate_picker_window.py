@@ -26,7 +26,7 @@ class CandidatePickerWindow(QWidget):
         title = QLabel("Несколько совпадений — выбери нужного")
         title.setWordWrap(True)
         title.setStyleSheet(
-            "color: white; font-weight: bold; font-family: sans-serif; font-size: 13px;"
+            "color: white; font-weight: bold; font-family: 'Inter'; font-size: 13px;"
         )
         self._layout.addWidget(title)
 
@@ -42,7 +42,7 @@ class CandidatePickerWindow(QWidget):
             btn = QPushButton(candidate["nickname"])
             btn.setStyleSheet(
                 "QPushButton { text-align: left; color: white; background-color: rgba(255,255,255,12); "
-                "border: none; border-radius: 6px; padding: 8px; font-family: sans-serif; font-size: 13px; }"
+                "border: none; border-radius: 6px; padding: 8px; font-family: 'Inter'; font-size: 13px; }"
                 "QPushButton:hover { background-color: rgba(255,255,255,22); }"
             )
             btn.setCursor(Qt.CursorShape.PointingHandCursor)

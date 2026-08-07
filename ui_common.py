@@ -11,9 +11,9 @@ QPushButton {
     background-color: rgba(255, 255, 255, 15);
     color: #dddddd;
     border: 1px solid rgba(255, 255, 255, 30);
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 8px 16px;
-    font-family: sans-serif;
+    font-family: 'Inter';
     font-size: 12px;
     font-weight: 600;
 }
@@ -36,9 +36,9 @@ QPushButton {
         stop:0 #FF9CE3, stop:0.5 #B388FF, stop:1 #7DD3FC);
     color: #14141a;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 8px 16px;
-    font-family: sans-serif;
+    font-family: 'Inter';
     font-size: 12px;
     font-weight: 700;
 }

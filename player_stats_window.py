@@ -71,7 +71,7 @@ class PlayerStatsWindow(QWidget):
 
         if stats is None:
             msg = QLabel(empty_message)
-            msg.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 13px;")
+            msg.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 13px;")
             self._layout.addWidget(msg)
             self._panel.adjustSize()
             self.adjustSize()
@@ -88,7 +88,7 @@ class PlayerStatsWindow(QWidget):
                 text += f" {code_tag}"
             msg = QLabel(text)
             msg.setWordWrap(True)
-            msg.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 13px;")
+            msg.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 13px;")
             self._layout.addWidget(msg)
             self._panel.adjustSize()
             self.adjustSize()
@@ -100,7 +100,7 @@ class PlayerStatsWindow(QWidget):
             stale_msg = QLabel(f"⚠ Нет связи с OpenDota сейчас — показаны данные от {age_str}")
             stale_msg.setWordWrap(True)
             stale_msg.setStyleSheet(
-                "color: #e2c04c; font-family: sans-serif; font-size: 11px; font-weight: 600;"
+                "color: #e2c04c; font-family: 'Inter'; font-size: 11px; font-weight: 600;"
             )
             self._layout.addWidget(stale_msg)
 
@@ -109,13 +109,13 @@ class PlayerStatsWindow(QWidget):
         if stats.leaderboard_rank is not None:
             leaderboard_badge = QLabel(f"Топ #{stats.leaderboard_rank}")
             leaderboard_badge.setStyleSheet(
-                f"color: {config.COLOR_GREEN}; font-family: sans-serif; "
+                f"color: {config.COLOR_GREEN}; font-family: 'Inter'; "
                 "font-size: 11px; font-weight: bold;"
             )
             header.addWidget(leaderboard_badge)
         nickname = QLabel(stats.nickname)
         nickname.setStyleSheet(
-            "color: white; font-weight: bold; font-family: sans-serif; font-size: 20px;"
+            "color: white; font-weight: bold; font-family: 'Inter'; font-size: 20px;"
         )
         header.addWidget(nickname)
         header.addStretch()
@@ -124,14 +124,14 @@ class PlayerStatsWindow(QWidget):
         winrate_str = f"{stats.winrate:.0f}%" if stats.winrate is not None else "н/д"
         overall = QLabel(f"WR {winrate_str}  •  {stats.total_games} игр")
         overall.setStyleSheet(
-            f"color: {_winrate_color(stats.winrate)}; font-family: sans-serif; "
+            f"color: {_winrate_color(stats.winrate)}; font-family: 'Inter'; "
             "font-size: 18px; font-weight: 600;"
         )
         self._layout.addWidget(overall)
 
         history_label = QLabel("ПОСЛЕДНИЕ МАТЧИ")
         history_label.setStyleSheet(
-            "color: #888899; font-family: sans-serif; font-size: 11px; "
+            "color: #888899; font-family: 'Inter'; font-size: 11px; "
             "font-weight: bold; letter-spacing: 1px;"
         )
         self._layout.addWidget(history_label)
@@ -142,7 +142,7 @@ class PlayerStatsWindow(QWidget):
         if stats.top_heroes:
             top_heroes_label = QLabel("ТОП ГЕРОИ")
             top_heroes_label.setStyleSheet(
-                "color: #888899; font-family: sans-serif; font-size: 11px; "
+                "color: #888899; font-family: 'Inter'; font-size: 11px; "
                 "font-weight: bold; letter-spacing: 1px;"
             )
             self._layout.addWidget(top_heroes_label)
@@ -163,7 +163,7 @@ class PlayerStatsWindow(QWidget):
                 hero_winrate = (win / games * 100) if games else None
                 caption = QLabel(f"{hero_winrate:.0f}% · {games}" if hero_winrate is not None else "н/д")
                 caption.setStyleSheet(
-                    f"color: {_winrate_color(hero_winrate)}; font-family: sans-serif; font-size: 10px;"
+                    f"color: {_winrate_color(hero_winrate)}; font-family: 'Inter'; font-size: 10px;"
                 )
                 caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 entry_layout.addWidget(caption)
@@ -176,7 +176,7 @@ class PlayerStatsWindow(QWidget):
             if peers:
                 peers_label = QLabel("ЧАСТО ИГРАЕШЬ С")
                 peers_label.setStyleSheet(
-                    "color: #888899; font-family: sans-serif; font-size: 11px; "
+                    "color: #888899; font-family: 'Inter'; font-size: 11px; "
                     "font-weight: bold; letter-spacing: 1px;"
                 )
                 self._layout.addWidget(peers_label)
@@ -184,7 +184,7 @@ class PlayerStatsWindow(QWidget):
                     row = QHBoxLayout()
                     row.addWidget(_icon_label(get_avatar_path(peer["account_id"], peer["avatarfull"]), PEER_AVATAR_SIZE))
                     name = QLabel(peer["personaname"])
-                    name.setStyleSheet("color: white; font-family: sans-serif; font-size: 12px;")
+                    name.setStyleSheet("color: white; font-family: 'Inter'; font-size: 12px;")
                     row.addWidget(name)
                     row.addStretch()
                     together_wr = (peer["win"] / peer["games"] * 100) if peer["games"] else None
@@ -192,7 +192,7 @@ class PlayerStatsWindow(QWidget):
                         f"{together_wr:.0f}% · {peer['games']} игр" if together_wr is not None else "н/д"
                     )
                     wr_label.setStyleSheet(
-                        f"color: {_winrate_color(together_wr)}; font-family: sans-serif; font-size: 11px;"
+                        f"color: {_winrate_color(together_wr)}; font-family: 'Inter'; font-size: 11px;"
                     )
                     row.addWidget(wr_label)
                     self._layout.addLayout(row)
@@ -217,7 +217,7 @@ class PlayerStatsWindow(QWidget):
             if standings and top_local_heroes:
                 bests_label = QLabel("ЛИЧНЫЕ РЕКОРДЫ")
                 bests_label.setStyleSheet(
-                    "color: #888899; font-family: sans-serif; font-size: 11px; "
+                    "color: #888899; font-family: 'Inter'; font-size: 11px; "
                     "font-weight: bold; letter-spacing: 1px;"
                 )
                 self._layout.addWidget(bests_label)
@@ -232,7 +232,7 @@ class PlayerStatsWindow(QWidget):
                     text = QLabel(
                         f"рекорд: {entry.get('best_kills', 0)}/{entry.get('best_gpm', 0)} gpm{streak_text}"
                     )
-                    text.setStyleSheet("color: #cccccc; font-family: sans-serif; font-size: 11px;")
+                    text.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 11px;")
                     row.addWidget(text)
                     row.addStretch()
                     self._layout.addLayout(row)

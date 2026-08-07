@@ -139,7 +139,7 @@ class _ModCard(QFrame):
 
         self.setObjectName("modCard")
         self.setStyleSheet(
-            "QFrame#modCard { background-color: rgba(255,255,255,10); border-radius: 8px; }"
+            "QFrame#modCard { background-color: rgba(255,255,255,10); border-radius: 12px; }"
         )
         self.setFixedWidth(CARD_WIDTH)
         layout = QVBoxLayout(self)
@@ -157,7 +157,7 @@ class _ModCard(QFrame):
         name = QLabel(mod["name"])
         name.setWordWrap(True)
         name.setStyleSheet(
-            "color: white; font-family: sans-serif; font-size: 11px; "
+            "color: white; font-family: 'Inter'; font-size: 11px; "
             "font-weight: 600; background: transparent;"
         )
         top_row.addWidget(name, 1)
@@ -179,7 +179,7 @@ class _ModCard(QFrame):
         self._status_label = QLabel("")
         self._status_label.setWordWrap(True)
         self._status_label.setStyleSheet(
-            "color: #999999; font-family: sans-serif; font-size: 10px; background: transparent;"
+            "color: #999999; font-family: 'Inter'; font-size: 10px; background: transparent;"
         )
         layout.addWidget(self._status_label)
 
@@ -294,7 +294,7 @@ class _ImageTile(QFrame):
             name_label = QLabel(title)
             name_label.setWordWrap(False)
             name_label.setStyleSheet(
-                "color: white; font-family: sans-serif; font-size: 11px; "
+                "color: white; font-family: 'Inter'; font-size: 11px; "
                 "font-weight: 700; background: transparent;"
             )
             text_layout.addWidget(name_label)
@@ -303,7 +303,7 @@ class _ImageTile(QFrame):
             badge_label = QLabel(badge, self)
             badge_label.setStyleSheet(
                 "background-color: rgba(15,15,20,180); color: #dddddd; "
-                "font-family: sans-serif; font-size: 10px; font-weight: 700; "
+                "font-family: 'Inter'; font-size: 10px; font-weight: 700; "
                 "border-radius: 8px; padding: 2px 8px;"
             )
             badge_label.adjustSize()
@@ -378,7 +378,7 @@ class _LandingPage(QWidget):
         if recent:
             recent_title = QLabel("НЕДАВНО ДОБАВЛЕННЫЕ")
             recent_title.setStyleSheet(
-                "color: #999999; font-family: sans-serif; font-size: 11px; "
+                "color: #999999; font-family: 'Inter'; font-size: 11px; "
                 "font-weight: 700; letter-spacing: 1px;"
             )
             layout.addWidget(recent_title)
@@ -407,7 +407,7 @@ class _LandingPage(QWidget):
 
         categories_title = QLabel("КАТЕГОРИИ")
         categories_title.setStyleSheet(
-            "color: #999999; font-family: sans-serif; font-size: 11px; "
+            "color: #999999; font-family: 'Inter'; font-size: 11px; "
             "font-weight: 700; letter-spacing: 1px;"
         )
         layout.addWidget(categories_title)
@@ -446,7 +446,7 @@ class _CategoryPage(QWidget):
 
         self._title = QLabel("")
         self._title.setStyleSheet(
-            "color: white; font-family: sans-serif; font-size: 18px; font-weight: 800;"
+            "color: white; font-family: 'Inter'; font-size: 18px; font-weight: 800;"
         )
         layout.addWidget(self._title)
 
@@ -456,7 +456,7 @@ class _CategoryPage(QWidget):
         self._search.setStyleSheet(
             "QLineEdit { background-color: rgba(255,255,255,10); color: white; "
             "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 6px 10px; "
-            "font-family: sans-serif; font-size: 12px; }"
+            "font-family: 'Inter'; font-size: 12px; }"
         )
         self._search.textChanged.connect(self._rebuild_grid)
         search_bar.addWidget(self._search, 1)
@@ -488,7 +488,7 @@ class _CategoryPage(QWidget):
         layout.addWidget(scroll, 1)
 
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color: #888888; font-family: sans-serif; font-size: 11px;")
+        self._status_label.setStyleSheet("color: #888888; font-family: 'Inter'; font-size: 11px;")
         layout.addWidget(self._status_label)
 
         self.refresh_batch_button()
@@ -555,14 +555,14 @@ def _sidebar_row_widget(text, count=None, bold=False):
     label = QLabel(text)
     weight = 700 if bold else 500
     label.setStyleSheet(
-        f"color: {'white' if bold else '#dddddd'}; font-family: sans-serif; "
+        f"color: {'white' if bold else '#dddddd'}; font-family: 'Inter'; "
         f"font-size: 12px; font-weight: {weight}; background: transparent;"
     )
     row_layout.addWidget(label, 1)
     if count is not None:
         count_label = QLabel(str(count))
         count_label.setStyleSheet(
-            "color: #888888; font-family: sans-serif; font-size: 11px; background: transparent;"
+            "color: #888888; font-family: 'Inter'; font-size: 11px; background: transparent;"
         )
         row_layout.addWidget(count_label, 0, Qt.AlignmentFlag.AlignRight)
     return row
@@ -572,7 +572,7 @@ def _sidebar_header_widget(text):
     label = QLabel(text)
     label.setContentsMargins(6, 10, 6, 2)
     label.setStyleSheet(
-        "color: #777777; font-family: sans-serif; font-size: 10px; "
+        "color: #777777; font-family: 'Inter'; font-size: 10px; "
         "font-weight: 700; letter-spacing: 1px; background: transparent;"
     )
     return label
@@ -598,7 +598,7 @@ class _ModsPage(QWidget):
         header.setSpacing(2)
         title = QLabel("МОДЫ ДЛЯ DOTA 2")
         title.setStyleSheet(
-            "color: white; font-family: sans-serif; font-size: 20px; font-weight: 800;"
+            "color: white; font-family: 'Inter'; font-size: 20px; font-weight: 800;"
         )
         header.addWidget(title)
         total = sum(self._counts.values())
@@ -606,13 +606,13 @@ class _ModsPage(QWidget):
             f"{total} модов в {len(self._categories)} категориях · "
             "открытый каталог Dota2PornFx (github.com/h6rd)"
         )
-        subtitle.setStyleSheet("color: #999999; font-family: sans-serif; font-size: 11px;")
+        subtitle.setStyleSheet("color: #999999; font-family: 'Inter'; font-size: 11px;")
         header.addWidget(subtitle)
         layout.addLayout(header)
 
         os_bar = QHBoxLayout()
         os_label = QLabel("Платформа:")
-        os_label.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px;")
+        os_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
         os_bar.addWidget(os_label)
         os_bar.addWidget(_os_toggle_button("🐧 Linux", active=True))
         windows_btn = _os_toggle_button("🔒 Windows", active=False)
@@ -630,7 +630,7 @@ class _ModsPage(QWidget):
         self._category_list.setFixedWidth(210)
         self._category_list.setStyleSheet(
             "QListWidget { background-color: rgba(255,255,255,10); color: white; "
-            "font-family: sans-serif; font-size: 12px; border: none; border-radius: 6px; }"
+            "font-family: 'Inter'; font-size: 12px; border: none; border-radius: 6px; }"
             "QListWidget::item { border-radius: 4px; }"
             "QListWidget::item:selected { background-color: rgba(255,255,255,30); }"
         )
@@ -654,7 +654,7 @@ class _ModsPage(QWidget):
         footer = QFrame()
         footer.setObjectName("modsFooter")
         footer.setStyleSheet(
-            "QFrame#modsFooter { background-color: rgba(255,255,255,6); border-radius: 8px; }"
+            "QFrame#modsFooter { background-color: rgba(255,255,255,6); border-radius: 12px; }"
         )
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(14, 8, 14, 8)
@@ -664,7 +664,7 @@ class _ModsPage(QWidget):
         footer_layout.addWidget(self._footer_dot)
         self._footer_status_label = QLabel("")
         self._footer_status_label.setStyleSheet(
-            "color: #cccccc; font-family: sans-serif; font-size: 11px; background: transparent;"
+            "color: #cccccc; font-family: 'Inter'; font-size: 11px; background: transparent;"
         )
         footer_layout.addWidget(self._footer_status_label)
         footer_layout.addStretch()
@@ -674,7 +674,7 @@ class _ModsPage(QWidget):
         # else (e.g. "minify" to share dota2-minify-bin's own folder)
         # instead of being stuck with this app's own default.
         lang_label = QLabel("-language:")
-        lang_label.setStyleSheet("color: #999999; font-family: sans-serif; font-size: 11px; background: transparent;")
+        lang_label.setStyleSheet("color: #999999; font-family: 'Inter'; font-size: 11px; background: transparent;")
         footer_layout.addWidget(lang_label)
         self._language_field = QLineEdit(mod_manager.get_language())
         self._language_field.setFixedWidth(90)
