@@ -105,6 +105,21 @@ RECENT_CARD_WIDTH = 150
 RECENT_CARD_IMAGE_HEIGHT = 90
 RECENT_LIMIT = 12
 
+LANGUAGE_FIELD_STYLE_OK = (
+    "QLineEdit { background-color: rgba(255,255,255,10); color: white; "
+    "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 4px 8px; "
+    "font-family: monospace; font-size: 11px; }"
+)
+# Non-official -language values are flagged, not blocked outright - Valve's
+# exact allow-list isn't published anywhere authoritative, so this is a
+# "you're on your own if you keep this" warning, not a hard validation
+# rule (mod_language_settings.is_valid() already covers actual syntax).
+LANGUAGE_FIELD_STYLE_WARN = (
+    "QLineEdit { background-color: rgba(226,87,76,25); color: white; "
+    "border: 1px solid #e2574c; border-radius: 4px; padding: 4px 8px; "
+    "font-family: monospace; font-size: 11px; }"
+)
+
 
 class _BatchInstallWorker(QThread):
     """Installs a queue of (category_id, mod) jobs one at a time, on one
@@ -670,19 +685,22 @@ class _ModsPage(QWidget):
         footer_layout.addWidget(self._footer_status_label)
         footer_layout.addStretch()
 
-        # Editable, not just a static "-language custom" label - lets the
-        # user point installs at a slot they already use for something
-        # else (e.g. "minify" to share dota2-minify-bin's own folder)
-        # instead of being stuck with this app's own default.
+        # Editable, not just a static "-language russian" label - lets the
+        # user point installs at whatever OFFICIAL Dota language slot they
+        # want (e.g. "english"). Valve now blocks arbitrary custom slots
+        # ("123", "minify", etc) - only real language folders still work,
+        # per the catalog's own site notice (2026-08-08) - hence the
+        # default is "russian", not a made-up custom name, and non-
+        # official values get flagged, not silently accepted.
         lang_label = QLabel("-language:")
         lang_label.setStyleSheet("color: #999999; font-family: 'Inter'; font-size: 11px; background: transparent;")
         footer_layout.addWidget(lang_label)
         self._language_field = QLineEdit(mod_manager.get_language())
         self._language_field.setFixedWidth(90)
-        self._language_field.setStyleSheet(
-            "QLineEdit { background-color: rgba(255,255,255,10); color: white; "
-            "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 4px 8px; "
-            "font-family: monospace; font-size: 11px; }"
+        self._language_field.setToolTip(
+            "Valve заблокировала кастомные -language (123, minify и т.п.) — работают только "
+            "официальные языки Dota (russian, english, ...). Даже для английской Dota "
+            "рекомендуют russian — эта папка точно поддерживается."
         )
         footer_layout.addWidget(self._language_field)
         save_lang_btn = QPushButton("Сохранить")
@@ -788,6 +806,10 @@ class _ModsPage(QWidget):
             f"Dota 2 найдена · моды ставятся в {mods_dir_name}" if found
             else f"Dota 2 не найдена ({mod_manager.DOTA_GAME_DIR})"
         )
+        official = mod_language_settings.is_official(mod_manager.get_language())
+        self._language_field.setStyleSheet(
+            LANGUAGE_FIELD_STYLE_OK if official else LANGUAGE_FIELD_STYLE_WARN
+        )
 
     def _copy_launch_option(self):
         QApplication.clipboard().setText(mod_manager.get_launch_option())
@@ -828,6 +850,8 @@ class _ModsPage(QWidget):
                 return
             migrate = choice == QMessageBox.StandardButton.Yes
         ok, message = mod_manager.set_language(new_language, migrate=migrate)
+        if ok and not mod_language_settings.is_official(new_language):
+            message += " — ⚠ не официальный язык, Valve может это блокировать, надёжнее russian"
         self._footer_status_label.setText(message)
         if ok:
             self._refresh_footer()
