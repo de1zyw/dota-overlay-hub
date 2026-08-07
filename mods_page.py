@@ -1,15 +1,22 @@
 """МОДЫ tab: browses the open Dota2PornFx mod catalog (mod_catalog.py) and
 installs/removes cosmetic mods via mod_manager.py. Preview downloads and
 install/uninstall both hit the network - each runs on its own throwaway
-QThread so neither ever blocks the Qt event loop."""
+QThread so neither ever blocks the Qt event loop.
+
+Mods can be installed one at a time (each card's own button) or picked
+via checkbox across any number of categories and installed in one batch
+run - the batch queue survives switching categories (tracked in
+_ModsPage._selected, keyed by (category_id, mod_name), independent of any
+one _ModCard's lifetime since the grid is rebuilt on every category/search
+change)."""
 import os
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QPushButton, QScrollArea, QVBoxLayout,
-    QWidget,
+    QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea,
+    QVBoxLayout, QWidget,
 )
 
 import mod_catalog
@@ -61,6 +68,43 @@ QPushButton:disabled {
 }
 """
 
+# The OS toggle's "active platform" pill - same gradient as PRIMARY so it
+# reads as "this one's selected", vs. the plain SECONDARY look of an
+# available-but-not-selected option.
+OS_ACTIVE_STYLE = PRIMARY_BUTTON_STYLE
+# Windows has no install backend yet (mod_manager.py only knows how to find
+# a LINUX Steam library - see steam_library.py) - shown, not hidden, so the
+# roadmap is visible, but disabled so it can't be picked. Qt's own
+# :disabled state (SECONDARY_BUTTON_STYLE already defines one) is exactly
+# the "greyed out / behind glass" look this needs, no extra style required.
+OS_LOCKED_STYLE = SECONDARY_BUTTON_STYLE
+
+# Qt's platform-default checkbox indicator is nearly invisible against this
+# app's dark custom background (no explicit style = whatever the barely-
+# there system default happens to be) - drawn explicitly here, same
+# gradient-on-check language as the primary button, so "selected for
+# batch install" actually reads as selected.
+CHECKBOX_STYLE = """
+QCheckBox { background: transparent; spacing: 4px; }
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid rgba(255, 255, 255, 70);
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 12);
+}
+QCheckBox::indicator:hover { border: 1px solid rgba(255, 255, 255, 120); }
+QCheckBox::indicator:checked {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #FF9CE3, stop:0.5 #B388FF, stop:1 #7DD3FC);
+    border: 1px solid rgba(255, 255, 255, 120);
+}
+QCheckBox::indicator:disabled {
+    background-color: rgba(255, 255, 255, 4);
+    border: 1px solid rgba(255, 255, 255, 20);
+}
+"""
+
 # Categories run from ~30 up to 464 mods (heroes) - rendering every card at
 # once would mean hundreds of concurrent thumbnail downloads and a very
 # tall scroll area. Capped, with the true count always shown below the
@@ -89,11 +133,35 @@ class _Worker(QThread):
         self.done.emit(result)
 
 
+class _BatchInstallWorker(QThread):
+    """Installs a queue of (category_id, mod) jobs one at a time, on one
+    background thread - sequential on purpose: mod_manager's manifest file
+    is a plain read-modify-write JSON file, not safe for concurrent
+    installs to touch at once."""
+    progress = pyqtSignal(int, int, str, bool)  # done_count, total, mod_name, ok
+    finished_all = pyqtSignal()
+
+    def __init__(self, jobs, parent=None):
+        super().__init__(parent)
+        self._jobs = jobs
+
+    def run(self):
+        total = len(self._jobs)
+        for i, (category_id, mod) in enumerate(self._jobs, start=1):
+            try:
+                ok, _message = mod_manager.install_mod(category_id, mod)
+            except Exception:  # noqa: BLE001 - one bad mod shouldn't kill the queue
+                ok = False
+            self.progress.emit(i, total, mod["name"], ok)
+        self.finished_all.emit()
+
+
 class _ModCard(QFrame):
-    def __init__(self, category_id, mod):
+    def __init__(self, category_id, mod, checked, on_toggle):
         super().__init__()
         self._category_id = category_id
         self._mod = mod
+        self._on_toggle = on_toggle
         self._preview_worker = None
         self._action_worker = None
 
@@ -106,6 +174,23 @@ class _ModCard(QFrame):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
+        top_row = QHBoxLayout()
+        top_row.setSpacing(4)
+        self._checkbox = QCheckBox()
+        self._checkbox.setChecked(checked)
+        self._checkbox.setStyleSheet(CHECKBOX_STYLE)
+        self._checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._checkbox.toggled.connect(self._on_checkbox_toggled)
+        top_row.addWidget(self._checkbox, 0, Qt.AlignmentFlag.AlignTop)
+        name = QLabel(mod["name"])
+        name.setWordWrap(True)
+        name.setStyleSheet(
+            "color: white; font-family: sans-serif; font-size: 11px; "
+            "font-weight: 600; background: transparent;"
+        )
+        top_row.addWidget(name, 1)
+        layout.addLayout(top_row)
+
         self._preview_label = QLabel()
         self._preview_label.setFixedSize(CARD_WIDTH - 16, PREVIEW_HEIGHT)
         self._preview_label.setStyleSheet(
@@ -113,15 +198,6 @@ class _ModCard(QFrame):
         )
         self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._preview_label)
-
-        name = QLabel(mod["name"])
-        name.setWordWrap(True)
-        name.setFixedHeight(32)
-        name.setStyleSheet(
-            "color: white; font-family: sans-serif; font-size: 11px; "
-            "font-weight: 600; background: transparent;"
-        )
-        layout.addWidget(name)
 
         self._action_btn = QPushButton()
         self._action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -142,6 +218,14 @@ class _ModCard(QFrame):
         installed = mod_manager.is_installed(self._category_id, self._mod["name"])
         self._action_btn.setText("Удалить" if installed else "Установить")
         self._action_btn.setStyleSheet(SECONDARY_BUTTON_STYLE if installed else PRIMARY_BUTTON_STYLE)
+        # No point queueing an already-installed mod for the batch button -
+        # its own "Удалить" already covers that case.
+        self._checkbox.setEnabled(not installed)
+        if installed:
+            self._checkbox.setChecked(False)
+
+    def _on_checkbox_toggled(self, checked):
+        self._on_toggle(self._category_id, self._mod, checked)
 
     def _load_preview(self):
         preview = self._mod.get("preview")
@@ -184,6 +268,20 @@ class _ModCard(QFrame):
         ok, message = result
         self._status_label.setText(message)
         self._refresh_button_state()
+        if ok:
+            # Was checked-and-installed individually while still queued for
+            # the batch button elsewhere - drop it from the queue too.
+            self._on_toggle(self._category_id, self._mod, False)
+
+
+def _os_toggle_button(text, active):
+    btn = QPushButton(text)
+    btn.setStyleSheet(OS_ACTIVE_STYLE if active else OS_LOCKED_STYLE)
+    if active:
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    else:
+        btn.setEnabled(False)
+    return btn
 
 
 class _ModsPage(QWidget):
@@ -191,6 +289,12 @@ class _ModsPage(QWidget):
         super().__init__()
         self._current_category = None
         self._all_mods = []
+        # {(category_id, mod_name): mod} - the batch-install queue. Kept
+        # here, not on individual cards, so it survives switching category
+        # (the grid, and every _ModCard in it, gets thrown away and rebuilt
+        # on every category/search change).
+        self._selected = {}
+        self._batch_worker = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -213,6 +317,17 @@ class _ModsPage(QWidget):
 
         right = QVBoxLayout()
         right.setSpacing(8)
+
+        os_bar = QHBoxLayout()
+        os_label = QLabel("Платформа:")
+        os_label.setStyleSheet("color: #aaaaaa; font-family: sans-serif; font-size: 11px;")
+        os_bar.addWidget(os_label)
+        os_bar.addWidget(_os_toggle_button("🐧 Linux", active=True))
+        windows_btn = _os_toggle_button("🔒 Windows", active=False)
+        windows_btn.setToolTip("Скоро — заработает после установки Windows на отдельный диск")
+        os_bar.addWidget(windows_btn)
+        os_bar.addStretch()
+        right.addLayout(os_bar)
 
         hint_bar = QHBoxLayout()
         hint = QLabel(
@@ -239,6 +354,7 @@ class _ModsPage(QWidget):
             warn.setStyleSheet("color: #e2574c; font-family: sans-serif; font-size: 11px;")
             right.addWidget(warn)
 
+        search_bar = QHBoxLayout()
         self._search = QLineEdit()
         self._search.setPlaceholderText("Поиск по названию...")
         self._search.setStyleSheet(
@@ -247,7 +363,19 @@ class _ModsPage(QWidget):
             "font-family: sans-serif; font-size: 12px; }"
         )
         self._search.textChanged.connect(self._on_search_changed)
-        right.addWidget(self._search)
+        search_bar.addWidget(self._search, 1)
+
+        self._clear_selection_btn = QPushButton("Очистить выбор")
+        self._clear_selection_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self._clear_selection_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clear_selection_btn.clicked.connect(self._clear_selection)
+        search_bar.addWidget(self._clear_selection_btn)
+
+        self._batch_btn = QPushButton()
+        self._batch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._batch_btn.clicked.connect(self._start_batch_install)
+        search_bar.addWidget(self._batch_btn)
+        right.addLayout(search_bar)
 
         self._grid_host = QWidget()
         self._grid = QGridLayout(self._grid_host)
@@ -269,6 +397,7 @@ class _ModsPage(QWidget):
 
         layout.addLayout(right, 1)
 
+        self._update_batch_button()
         if self._category_list.count():
             self._category_list.setCurrentRow(0)
 
@@ -289,6 +418,46 @@ class _ModsPage(QWidget):
     def _on_search_changed(self, _text):
         self._rebuild_grid()
 
+    def _on_card_toggle(self, category_id, mod, checked):
+        key = (category_id, mod["name"])
+        if checked:
+            self._selected[key] = mod
+        else:
+            self._selected.pop(key, None)
+        self._update_batch_button()
+
+    def _update_batch_button(self):
+        count = len(self._selected)
+        self._batch_btn.setText(f"Установить выбранное ({count})" if count else "Установить выбранное")
+        self._batch_btn.setEnabled(count > 0)
+        self._batch_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._clear_selection_btn.setEnabled(count > 0)
+
+    def _clear_selection(self):
+        self._selected = {}
+        self._update_batch_button()
+        self._rebuild_grid()
+
+    def _start_batch_install(self):
+        jobs = list(self._selected.items())
+        if not jobs:
+            return
+        self._batch_btn.setEnabled(False)
+        self._clear_selection_btn.setEnabled(False)
+        self._batch_worker = _BatchInstallWorker([(cat, mod) for (cat, _name), mod in jobs])
+        self._batch_worker.progress.connect(self._on_batch_progress)
+        self._batch_worker.finished_all.connect(self._on_batch_finished)
+        self._batch_worker.start()
+
+    def _on_batch_progress(self, done, total, mod_name, ok):
+        verdict = "OK" if ok else "ошибка"
+        self._status_label.setText(f"Установка {done}/{total}: {mod_name} — {verdict}")
+
+    def _on_batch_finished(self):
+        self._selected = {}
+        self._update_batch_button()
+        self._rebuild_grid()
+
     def _rebuild_grid(self):
         while self._grid.count():
             item = self._grid.takeAt(0)
@@ -305,7 +474,12 @@ class _ModsPage(QWidget):
 
         shown = filtered[:MODS_PER_PAGE]
         for i, mod in enumerate(shown):
-            card = _ModCard(self._current_category, mod)
+            key = (self._current_category, mod["name"])
+            card = _ModCard(
+                self._current_category, mod,
+                checked=key in self._selected,
+                on_toggle=self._on_card_toggle,
+            )
             self._grid.addWidget(card, i // GRID_COLUMNS, i % GRID_COLUMNS)
 
         if not filtered:
