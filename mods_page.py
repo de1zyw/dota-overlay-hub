@@ -21,52 +21,9 @@ from PyQt6.QtWidgets import (
 
 import mod_catalog
 import mod_manager
-
-# Duplicated from launcher.py rather than imported - launcher.py imports
-# this module to build its МОДЫ tab, so importing back from here would be
-# a circular import. Same visual language, just two small style strings.
-SECONDARY_BUTTON_STYLE = """
-QPushButton {
-    background-color: rgba(255, 255, 255, 15);
-    color: #dddddd;
-    border: 1px solid rgba(255, 255, 255, 30);
-    border-radius: 6px;
-    padding: 6px 12px;
-    font-family: sans-serif;
-    font-size: 11px;
-    font-weight: 600;
-}
-QPushButton:hover {
-    background-color: rgba(255, 255, 255, 25);
-    border: 1px solid rgba(255, 255, 255, 50);
-}
-QPushButton:disabled {
-    background-color: rgba(255, 255, 255, 8);
-    color: #666666;
-}
-"""
-
-PRIMARY_BUTTON_STYLE = """
-QPushButton {
-    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #FF9CE3, stop:0.5 #B388FF, stop:1 #7DD3FC);
-    color: #14141a;
-    border: none;
-    border-radius: 6px;
-    padding: 6px 12px;
-    font-family: sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-}
-QPushButton:hover {
-    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #ffb3ea, stop:0.5 #c39dff, stop:1 #93ddff);
-}
-QPushButton:disabled {
-    background-color: rgba(255, 255, 255, 12);
-    color: #666666;
-}
-"""
+from tools_panel import _ToolsPanel
+from ui_common import PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
+from ui_common import Worker as _Worker
 
 # The OS toggle's "active platform" pill - same gradient as PRIMARY so it
 # reads as "this one's selected", vs. the plain SECONDARY look of an
@@ -114,23 +71,6 @@ MODS_PER_PAGE = 60
 CARD_WIDTH = 150
 PREVIEW_HEIGHT = 100
 GRID_COLUMNS = 4
-
-
-class _Worker(QThread):
-    """Runs one blocking callable off the Qt main thread; emits its return
-    value (or the caught exception, if it raised) on `done`."""
-    done = pyqtSignal(object)
-
-    def __init__(self, fn, parent=None):
-        super().__init__(parent)
-        self._fn = fn
-
-    def run(self):
-        try:
-            result = self._fn()
-        except Exception as exc:  # noqa: BLE001 - surfaced to the UI, not swallowed
-            result = exc
-        self.done.emit(result)
 
 
 class _BatchInstallWorker(QThread):
@@ -328,6 +268,8 @@ class _ModsPage(QWidget):
         os_bar.addWidget(windows_btn)
         os_bar.addStretch()
         right.addLayout(os_bar)
+
+        right.addWidget(_ToolsPanel())
 
         hint_bar = QHBoxLayout()
         hint = QLabel(

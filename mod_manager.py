@@ -12,6 +12,7 @@ own hand-installed mods that happen to share the folder."""
 import io
 import json
 import os
+import shutil
 import zipfile
 
 import requests
@@ -65,13 +66,18 @@ def list_installed():
     return _load_manifest()
 
 
+def _used_filenames():
+    used = set()
+    for entry in _load_manifest().values():
+        used.update(entry["files"])
+    return used
+
+
 def _next_pak_names(count):
     """Sequential pakNN_dir.vpk names (10-99 - Valve's own convention for
     add-on VPKs, same range the catalog's README tells manual users to pick
     to avoid conflicts) not already used by any mod we've installed."""
-    used = set()
-    for entry in _load_manifest().values():
-        used.update(entry["files"])
+    used = _used_filenames()
     names = []
     n = 10
     while len(names) < count and n <= 99:
@@ -81,6 +87,22 @@ def _next_pak_names(count):
             used.add(candidate)
         n += 1
     return names
+
+
+def _next_free_prefix(suffixes):
+    """Finds a "pakNN" prefix (10-99) where NONE of the given suffixes
+    (e.g. ["_dir.vpk", "_000.vpk"] for a chunked merge output) collide
+    with an already-installed filename - used for mod_tools.py output,
+    which arrives as a whole file GROUP that must move together under one
+    freshly chosen number, never split across several."""
+    used = _used_filenames()
+    n = 10
+    while n <= 99:
+        prefix = f"pak{n:02d}"
+        if not any(f"{prefix}{suffix}" in used for suffix in suffixes):
+            return prefix
+        n += 1
+    return None
 
 
 def _safe_remove(path):
@@ -163,3 +185,43 @@ def uninstall_mod(category_id, mod_name):
         _safe_remove(os.path.join(MODS_DIR, fname))
     _save_manifest(manifest)
     return True, "Удалён"
+
+
+def install_from_files(category_id, display_name, source_paths):
+    """Adopts already-built .vpk file(s) - e.g. mod_tools.py's pack/merge/
+    background-changer output - into MODS_DIR under one manifest-tracked,
+    collision-free pak group. Unlike install_mod, there's no download step;
+    the files already exist locally and are only copied (source_paths are
+    never touched/moved)."""
+    if not dota_found():
+        return False, "Папка Dota 2 не найдена"
+    if not source_paths:
+        return False, "Нет файлов для установки"
+    try:
+        os.makedirs(MODS_DIR, exist_ok=True)
+    except OSError as exc:
+        return False, f"Не удалось создать папку модов: {exc}"
+
+    suffixes = [f"_{os.path.basename(p).split('_', 1)[1]}" for p in source_paths]
+    new_prefix = _next_free_prefix(suffixes)
+    if new_prefix is None:
+        return False, "Слишком много установленных модов (лимит pak10-pak99 исчерпан)"
+
+    written = []
+    for path, suffix in zip(source_paths, suffixes):
+        new_name = f"{new_prefix}{suffix}"
+        dest = os.path.join(MODS_DIR, new_name)
+        try:
+            shutil.copy2(path, dest)
+            written.append(new_name)
+        except OSError as exc:
+            for w in written:
+                _safe_remove(os.path.join(MODS_DIR, w))
+            return False, f"Ошибка записи: {exc}"
+
+    manifest = _load_manifest()
+    manifest[_mod_key(category_id, display_name)] = {
+        "category": category_id, "name": display_name, "files": written,
+    }
+    _save_manifest(manifest)
+    return True, "Установлен"
