@@ -3,4 +3,6 @@ __pycache__/
 *.pyc
 gsi_captures.jsonl
 .assets_cache/
+.mod_catalog_cache/
+installed_mods.json
 logs/

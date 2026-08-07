@@ -38,6 +38,7 @@ from launcher_checks import (
     STATUS_ERROR, STATUS_OK, STATUS_WARN,
 )
 from logs_view import list_log_runs
+from mods_page import _ModsPage
 from overlay_window import _GradientPanel
 
 _STATUS_COLOR = {
@@ -637,23 +638,26 @@ class LauncherWindow(QWidget):
 
         self._stack = QStackedWidget()
         overlays_btn = QPushButton("ОВЕРЛЕИ")
+        mods_btn = QPushButton("МОДЫ")
         logs_btn = QPushButton("ЛОГИ")
         settings_btn = QPushButton("НАСТРОЙКИ")
         history_btn = QPushButton("ИСТОРИЯ")
-        for btn in (overlays_btn, logs_btn, settings_btn, history_btn):
+        for btn in (overlays_btn, mods_btn, logs_btn, settings_btn, history_btn):
             btn.setCheckable(True)
             btn.setStyleSheet(
                 "QPushButton { text-align: left; color: #cccccc; background: transparent; "
                 "border: none; font-family: sans-serif; font-size: 12px; padding: 8px; }"
                 "QPushButton:checked { color: white; font-weight: bold; }"
             )
-        nav_buttons = [overlays_btn, logs_btn, settings_btn, history_btn]
+        nav_buttons = [overlays_btn, mods_btn, logs_btn, settings_btn, history_btn]
         overlays_btn.setChecked(True)
         overlays_btn.clicked.connect(lambda: self._switch_page(0, nav_buttons))
-        logs_btn.clicked.connect(lambda: self._switch_page(1, nav_buttons))
-        settings_btn.clicked.connect(lambda: self._switch_page(2, nav_buttons))
-        history_btn.clicked.connect(lambda: self._switch_page(3, nav_buttons))
+        mods_btn.clicked.connect(lambda: self._switch_page(1, nav_buttons))
+        logs_btn.clicked.connect(lambda: self._switch_page(2, nav_buttons))
+        settings_btn.clicked.connect(lambda: self._switch_page(3, nav_buttons))
+        history_btn.clicked.connect(lambda: self._switch_page(4, nav_buttons))
         sidebar_layout.addWidget(overlays_btn)
+        sidebar_layout.addWidget(mods_btn)
         sidebar_layout.addWidget(logs_btn)
         sidebar_layout.addWidget(settings_btn)
         sidebar_layout.addWidget(history_btn)
@@ -678,10 +682,12 @@ class LauncherWindow(QWidget):
         overlays_scroll.setWidgetResizable(True)
         overlays_scroll.setFrameShape(QFrame.Shape.NoFrame)
         overlays_scroll.setStyleSheet("QScrollArea { background: transparent; } QScrollArea > QWidget > QWidget { background: transparent; }")
+        self._mods_page = _ModsPage()
         self._logs_page = _LogsPage()
         self._settings_page = _SettingsPage()
         self._history_page = _HistoryPage()
         self._stack.addWidget(overlays_scroll)
+        self._stack.addWidget(self._mods_page)
         self._stack.addWidget(self._logs_page)
         self._stack.addWidget(self._settings_page)
         self._stack.addWidget(self._history_page)
@@ -709,9 +715,9 @@ class LauncherWindow(QWidget):
             btn.setChecked(i == index)
         self._fade_anim.stop()
         self._fade_anim.start()
-        if index == 1:
+        if index == 2:
             self._logs_page.refresh()
-        elif index == 3:
+        elif index == 4:
             self._history_page.refresh()
 
     def start_overlay_and_hide(self):
