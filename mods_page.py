@@ -75,9 +75,9 @@ QCheckBox::indicator:disabled {
 # grid so a truncated category still reads as "search to narrow", not as
 # "this is everything".
 MODS_PER_PAGE = 60
-CARD_WIDTH = 150
-PREVIEW_HEIGHT = 100
-GRID_COLUMNS = 4
+CARD_WIDTH = 210
+PREVIEW_HEIGHT = 140
+GRID_COLUMNS = 3
 
 # Purely a sidebar grouping label - the catalog itself has no group/section
 # concept beyond the flat category list, this mirrors the official Mod
