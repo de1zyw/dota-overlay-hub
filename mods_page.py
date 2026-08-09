@@ -137,7 +137,11 @@ class _BatchInstallWorker(QThread):
         total = len(self._jobs)
         for i, (category_id, mod) in enumerate(self._jobs, start=1):
             try:
-                ok, _message = mod_manager.install_mod(category_id, mod)
+                installer = (
+                    mod_manager.install_loose_mod if mod_manager.is_loose_file_category(category_id)
+                    else mod_manager.install_mod
+                )
+                ok, _message = installer(category_id, mod)
             except Exception:  # noqa: BLE001 - one bad mod shouldn't kill the queue
                 ok = False
             self.progress.emit(i, total, mod["name"], ok)
@@ -240,10 +244,13 @@ class _ModCard(QFrame):
     def _on_action_clicked(self):
         self._action_btn.setEnabled(False)
         installed = mod_manager.is_installed(self._category_id, self._mod["name"])
+        loose = mod_manager.is_loose_file_category(self._category_id)
         if installed:
-            fn = lambda: mod_manager.uninstall_mod(self._category_id, self._mod["name"])
+            uninstaller = mod_manager.uninstall_loose_mod if loose else mod_manager.uninstall_mod
+            fn = lambda: uninstaller(self._category_id, self._mod["name"])
         else:
-            fn = lambda: mod_manager.install_mod(self._category_id, self._mod)
+            installer = mod_manager.install_loose_mod if loose else mod_manager.install_mod
+            fn = lambda: installer(self._category_id, self._mod)
         self._action_worker = _Worker(fn)
         self._action_worker.done.connect(self._on_action_done)
         self._action_worker.start()

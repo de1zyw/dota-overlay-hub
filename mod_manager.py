@@ -34,6 +34,26 @@ _MANIFEST_PATH = os.path.join(os.path.dirname(__file__), "installed_mods.json")
 
 _session = requests.Session()
 
+# "cursors" and "fonts" aren't packed into pakNN_dir.vpk at all - their
+# catalog zips ship raw loose files (a full cursor.ani/.bmp/.res set, or 4
+# named .ttf/.otf files) that the catalog's own Windows Install.bat just
+# copies into a FIXED subfolder of game/dota itself - confirmed by reading
+# those .bat files directly rather than guessing. Not -language-slot
+# dependent at all (applies regardless of which -language is active),
+# unlike every pakNN-based category. zip_subdir is matched by suffix
+# against each zip entry's path (the top-level folder is named after the
+# mod itself, e.g. "Earthshaker Cursor/cursor/...").
+LOOSE_FILE_CATEGORIES = {
+    "cursors": {"zip_subdir": "cursor", "dest_subdir": os.path.join("resource", "cursor")},
+    "fonts": {"zip_subdir": "assets/custom", "dest_subdir": os.path.join("panorama", "fonts")},
+}
+
+_BACKUP_ROOT = os.path.join(os.path.dirname(__file__), ".loose_mod_backups")
+
+
+def is_loose_file_category(category_id):
+    return category_id in LOOSE_FILE_CATEGORIES
+
 
 def get_language():
     return mod_language_settings.load()
@@ -79,8 +99,13 @@ def set_language(new_language, migrate=True):
                 src = os.path.join(old_dir, fname)
                 if not os.path.exists(src):
                     continue
+                dest = os.path.join(new_dir, fname)
                 try:
-                    shutil.move(src, os.path.join(new_dir, fname))
+                    # fname can be a relative subpath ("maps/dota.vpk"),
+                    # not just a bare filename - its parent under new_dir
+                    # isn't guaranteed to exist yet.
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    shutil.move(src, dest)
                     moved.append(fname)
                 except OSError as exc:
                     for m in moved:
@@ -215,22 +240,53 @@ def install_mod(category_id, mod):
     except requests.exceptions.RequestException as exc:
         return False, f"Ошибка скачивания: {exc}"
 
+    mods_dir = get_mods_dir()
+
+    # Terrain/map replacements ship as maps/dota.vpk inside the zip - NOT
+    # a pakNN addon. Confirmed via the catalog's own install guide: it
+    # goes straight into the same per-language folder as everything else,
+    # just under a maps/ subfolder with a fixed filename (Dota's own VPK
+    # search path checks there too) - never renamed/numbered, and only
+    # one map replacement can be active at a time (fixed filename, same
+    # "last one wins" as installing it by hand twice).
+    map_blob = None
     vpk_blobs = []
     if mod["file"].lower().endswith(".zip"):
         try:
             with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
                 for name in zf.namelist():
-                    if name.lower().endswith(".vpk"):
+                    lname = name.lower()
+                    if lname == "maps/dota.vpk" or lname.endswith("/maps/dota.vpk"):
+                        map_blob = zf.read(name)
+                    elif lname.endswith(".vpk"):
                         vpk_blobs.append(zf.read(name))
         except zipfile.BadZipFile:
             return False, "Повреждённый архив мода"
     else:
         vpk_blobs.append(resp.content)
 
+    if map_blob is not None:
+        map_dest_dir = os.path.join(mods_dir, "maps")
+        try:
+            os.makedirs(map_dest_dir, exist_ok=True)
+            with open(os.path.join(map_dest_dir, "dota.vpk"), "wb") as f:
+                f.write(map_blob)
+        except OSError as exc:
+            return False, f"Ошибка записи: {exc}"
+
+        key = _mod_key(category_id, mod["name"])
+        manifest = _load_manifest()
+        for existing_key in [k for k, v in manifest.items() if v.get("map") and k != key]:
+            manifest.pop(existing_key, None)
+        manifest[key] = {
+            "category": category_id, "name": mod["name"],
+            "files": [os.path.join("maps", "dota.vpk")], "map": True,
+        }
+        _save_manifest(manifest)
+        return True, "Установлен"
+
     if not vpk_blobs:
         return False, "В архиве мода не найдено .vpk"
-
-    mods_dir = get_mods_dir()
     try:
         os.makedirs(mods_dir, exist_ok=True)
     except OSError as exc:
@@ -312,3 +368,115 @@ def install_from_files(category_id, display_name, source_paths):
     }
     _save_manifest(manifest)
     return True, "Установлен"
+
+
+def install_loose_mod(category_id, mod):
+    """Cursors/fonts: extract the zip's loose files (not a .vpk) straight
+    into a fixed subfolder of game/dota - see LOOSE_FILE_CATEGORIES'
+    comment for why. Whatever's already in that destination (a previous
+    mod from this same category, or nothing - Dota's real defaults live
+    safely packed inside its own VPKs, never touched) is backed up first
+    so uninstall can put it back exactly."""
+    spec = LOOSE_FILE_CATEGORIES.get(category_id)
+    if spec is None:
+        raise ValueError(f"{category_id} is not a loose-file category")
+    if not dota_found():
+        return False, "Папка Dota 2 не найдена"
+
+    url = mod_catalog.get_download_url(category_id, mod.get("file"))
+    if not url:
+        return False, "У этого мода нет файла для скачивания"
+    try:
+        resp = _session.get(url, timeout=60)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as exc:
+        return False, f"Ошибка скачивания: {exc}"
+
+    zip_subdir = spec["zip_subdir"].replace("\\", "/")
+    dest_dir = os.path.join(DOTA_GAME_DIR, spec["dest_subdir"])
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            marker = f"/{zip_subdir}/"
+            payload = {}
+            for name in zf.namelist():
+                if name.endswith("/") or marker not in f"/{name}":
+                    continue
+                fname = os.path.basename(name)
+                if fname:
+                    payload[fname] = zf.read(name)
+    except zipfile.BadZipFile:
+        return False, "Повреждённый архив мода"
+
+    if not payload:
+        return False, f"В архиве не найдена папка {spec['zip_subdir']}"
+
+    backup_dir = os.path.join(_BACKUP_ROOT, category_id)
+    already_backed_up = os.path.isdir(backup_dir) and os.listdir(backup_dir)
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        if not already_backed_up:
+            os.makedirs(backup_dir, exist_ok=True)
+            for fname in os.listdir(dest_dir):
+                src = os.path.join(dest_dir, fname)
+                if os.path.isfile(src):
+                    shutil.copy2(src, os.path.join(backup_dir, fname))
+    except OSError as exc:
+        return False, f"Не удалось подготовить папку: {exc}"
+
+    written = []
+    try:
+        for fname, data in payload.items():
+            with open(os.path.join(dest_dir, fname), "wb") as f:
+                f.write(data)
+            written.append(fname)
+    except OSError as exc:
+        return False, f"Ошибка записи: {exc}"
+
+    manifest = _load_manifest()
+    # Only one loose mod can be "active" per category at a time (same
+    # destination folder, last-one-wins - identical to what the real
+    # Windows installer does if you run it twice) - drop any previous
+    # entry from this category so a stale "Удалить" doesn't target files
+    # that no longer belong to it.
+    for existing_key in [
+        k for k, v in manifest.items()
+        if v.get("category") == category_id and v.get("loose")
+    ]:
+        manifest.pop(existing_key, None)
+
+    manifest[_mod_key(category_id, mod["name"])] = {
+        "category": category_id, "name": mod["name"], "files": written, "loose": True,
+    }
+    _save_manifest(manifest)
+    return True, "Установлен"
+
+
+def uninstall_loose_mod(category_id, mod_name):
+    spec = LOOSE_FILE_CATEGORIES.get(category_id)
+    if spec is None:
+        raise ValueError(f"{category_id} is not a loose-file category")
+    key = _mod_key(category_id, mod_name)
+    manifest = _load_manifest()
+    entry = manifest.pop(key, None)
+    if entry is None:
+        return True, "Не был установлен"
+
+    dest_dir = os.path.join(DOTA_GAME_DIR, spec["dest_subdir"])
+    for fname in entry["files"]:
+        _safe_remove(os.path.join(dest_dir, fname))
+
+    backup_dir = os.path.join(_BACKUP_ROOT, category_id)
+    if os.path.isdir(backup_dir):
+        for fname in os.listdir(backup_dir):
+            try:
+                shutil.move(os.path.join(backup_dir, fname), os.path.join(dest_dir, fname))
+            except OSError:
+                pass
+        try:
+            os.rmdir(backup_dir)
+        except OSError:
+            pass
+
+    _save_manifest(manifest)
+    return True, "Удалён"
