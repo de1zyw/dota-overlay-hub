@@ -17,8 +17,8 @@ change)."""
 import os
 import subprocess
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import QSize, Qt, QTimer
+from PyQt6.QtGui import QMovie, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QPushButton,
@@ -675,8 +675,20 @@ class _CategoryPage(QWidget):
             self._status_label.setText(f"{len(filtered)} модов")
 
 
-def _apply_icon_pixmap(label, path):
+def _apply_icon_pixmap(label, path, category_id=None):
     if not isinstance(path, str) or not os.path.exists(path):
+        return
+    if category_id is not None and category_icons.is_animated(category_id):
+        # A bare QPixmap silently renders only a gif's first frame, no
+        # error - QMovie is Qt's actual animated-image player. Parented to
+        # the label so it shares the label's lifetime, and stashed as an
+        # attribute too since PyQt's C++/Python ownership split has bitten
+        # this app before when the only reference was the parent link.
+        movie = QMovie(path, parent=label)
+        movie.setScaledSize(QSize(16, 16))
+        label.setMovie(movie)
+        label._icon_movie = movie
+        movie.start()
         return
     pixmap = QPixmap(path).scaled(
         16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
@@ -703,7 +715,9 @@ def _sidebar_row_widget(text, count=None, bold=False, category_id=None, emoji=""
             # lives for as long as it's in the sidebar QListWidget, same
             # lifetime as the icon it's fetching.
             worker = _Worker(lambda cid=category_id: category_icons.get_icon_path(cid))
-            worker.done.connect(lambda path, lbl=icon_label: _apply_icon_pixmap(lbl, path))
+            worker.done.connect(
+                lambda path, lbl=icon_label, cid=category_id: _apply_icon_pixmap(lbl, path, cid)
+            )
             worker.start()
             row._icon_worker = worker
 

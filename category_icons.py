@@ -75,7 +75,15 @@ _REAL_ICON_LOADERS = {
     # user found (Steam Community, "Yelling mic icon", 2013-10-26).
     "sounds": lambda: _bundled("sounds.png"),
     "river": lambda: _bundled("river.png"),
+    # A real Dota2_hero_emoji reaction gif (Techies, from the user's own
+    # collection) rather than a static crop - "мега-килл" is inherently a
+    # moment, not an object, so this is the one category icon that's
+    # animated. is_animated() below is how callers know to load it as a
+    # QMovie instead of a QPixmap.
+    "mega-kill": lambda: _bundled("mega_kill.gif"),
 }
+
+_ANIMATED_CATEGORIES = {"mega-kill"}
 
 # Every id from mod_catalog.get_categories(), each glyph used exactly
 # once - the catalog's own data reused 📖 for wards/couriers/river and 🔊
@@ -131,6 +139,13 @@ def get_icon_path(category_id):
     call from a background thread, never the Qt main thread."""
     loader = _REAL_ICON_LOADERS.get(category_id)
     return loader() if loader else None
+
+
+def is_animated(category_id):
+    """True for the handful of icons that are a gif, not a still image -
+    callers should load these with QMovie, not QPixmap (a bare QPixmap
+    silently renders only the first frame of a gif, no error)."""
+    return category_id in _ANIMATED_CATEGORIES
 
 
 def get_emoji(category_id, fallback=""):
