@@ -56,6 +56,57 @@ QPushButton:disabled {
 }
 """
 
+# The platform's native scrollbar (grey track, arrow buttons at each end)
+# doesn't match anything else in this app's own dark/rounded visual
+# language - append to any QScrollArea's own stylesheet. add-line/sub-
+# line's height/width forced to 0 is what actually removes the arrow
+# buttons (Qt has no simpler toggle for that); add-page/sub-page set to
+# transparent so only the handle itself paints.
+SCROLLBAR_STYLE = """
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background: rgba(255, 255, 255, 40);
+    border-radius: 4px;
+    min-height: 24px;
+}
+QScrollBar::handle:vertical:hover {
+    background: rgba(255, 255, 255, 70);
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+    background: none;
+    border: none;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+QScrollBar:horizontal {
+    background: transparent;
+    height: 8px;
+    margin: 0px;
+}
+QScrollBar::handle:horizontal {
+    background: rgba(255, 255, 255, 40);
+    border-radius: 4px;
+    min-width: 24px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: rgba(255, 255, 255, 70);
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+    background: none;
+    border: none;
+}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: none;
+}
+"""
+
 
 class Worker(QThread):
     """Runs one blocking callable off the Qt main thread; emits its return

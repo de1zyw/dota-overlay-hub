@@ -29,7 +29,7 @@ import mod_catalog
 import mod_language_settings
 import mod_manager
 from tools_panel import _ToolsPanel
-from ui_common import PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
+from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE
 from ui_common import Worker as _Worker
 
 # The OS toggle's "active platform" pill - same gradient as PRIMARY so it
@@ -471,6 +471,7 @@ class _LandingPage(QWidget):
             carousel_scroll.setStyleSheet(
                 "QScrollArea { background: transparent; } "
                 "QScrollArea > QWidget > QWidget { background: transparent; }"
+                + SCROLLBAR_STYLE
             )
             layout.addWidget(carousel_scroll)
 
@@ -498,6 +499,7 @@ class _LandingPage(QWidget):
         self._tiles_scroll.setStyleSheet(
             "QScrollArea { background: transparent; } "
             "QScrollArea > QWidget > QWidget { background: transparent; }"
+            + SCROLLBAR_STYLE
         )
         layout.addWidget(self._tiles_scroll, 1)
 
@@ -585,6 +587,7 @@ class _CategoryPage(QWidget):
         self._scroll.setStyleSheet(
             "QScrollArea { background: transparent; } "
             "QScrollArea > QWidget > QWidget { background: transparent; }"
+            + SCROLLBAR_STYLE
         )
         layout.addWidget(self._scroll, 1)
 
@@ -786,6 +789,7 @@ class _ModsPage(QWidget):
             "font-family: 'Inter'; font-size: 12px; border: none; border-radius: 6px; }"
             "QListWidget::item { border-radius: 4px; }"
             "QListWidget::item:selected { background-color: rgba(255,255,255,30); }"
+            + SCROLLBAR_STYLE
         )
         self._build_sidebar()
         self._category_list.currentRowChanged.connect(self._on_sidebar_row_changed)

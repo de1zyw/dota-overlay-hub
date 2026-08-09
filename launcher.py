@@ -58,7 +58,7 @@ from launcher_checks import (
 from logs_view import list_log_runs
 from mods_page import _ModsPage
 from overlay_window import _GradientPanel
-from ui_common import PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
+from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE
 
 _STATUS_COLOR = {
     STATUS_OK: config.COLOR_GREEN,
@@ -345,6 +345,7 @@ class _LogsPage(QWidget):
             "font-family: 'Inter'; font-size: 12px; border: none; border-radius: 6px; }"
             "QListWidget::item { padding: 6px; }"
             "QListWidget::item:selected { background-color: rgba(255,255,255,30); }"
+            + SCROLLBAR_STYLE
         )
         self._list.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self._list)
@@ -516,6 +517,7 @@ class _HistoryPage(QWidget):
             "font-family: 'Inter'; font-size: 12px; border: none; border-radius: 6px; }"
             "QListWidget::item { padding: 6px; }"
             "QListWidget::item:selected { background-color: rgba(255,255,255,30); }"
+            + SCROLLBAR_STYLE
         )
         self._list.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self._list)
@@ -651,7 +653,11 @@ class LauncherWindow(QWidget):
         overlays_scroll.setWidget(self._overlays_page)
         overlays_scroll.setWidgetResizable(True)
         overlays_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        overlays_scroll.setStyleSheet("QScrollArea { background: transparent; } QScrollArea > QWidget > QWidget { background: transparent; }")
+        overlays_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; } "
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+            + SCROLLBAR_STYLE
+        )
         self._mods_page = _ModsPage()
         self._logs_page = _LogsPage()
         self._settings_page = _SettingsPage()
