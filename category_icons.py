@@ -8,19 +8,37 @@ exists, a plain Unicode glyph is a worse stand-in than the real icon.
 
 Two tiers:
 - _REAL_ICON_LOADERS: categories with a clean, unambiguous real Dota
-  asset (a specific in-game item/object, not a broad concept like
-  "Shaders" or "Optimization") - backed by a real downloaded PNG via
-  assets.py. Each loader does network I/O on first call (cached to disk
-  after) - callers MUST run get_icon_path() off the Qt main thread.
+  asset. Most are a real downloaded PNG fetched via assets.py (network
+  I/O on first call, cached to disk after - callers MUST run
+  get_icon_path() off the Qt main thread). A few (_BUNDLED_ICONS) are
+  hand-cropped once from the catalog's own mod files/preview screenshots
+  and shipped as static files under assets/category_icons/ instead - no
+  clean CDN icon existed for these, so the source was either a real
+  installable mod asset (Cursors: an actual cursor bitmap, extracted
+  from the catalog's own "Default Cursor" mod zip - the literal image
+  these mods replace) or a cropped catalog preview screenshot (High
+  Five, Hero Sounds - picked and cropped by hand, not reproducible by a
+  formula, hence static rather than fetched).
 - EMOJI: a hand-picked, collision-free fallback for every other category
   (and as a last-resort if a real icon's download ever fails)."""
+import os
+
 import assets
+
+_BUNDLED_ICON_DIR = os.path.join(os.path.dirname(__file__), "assets", "category_icons")
+
+
+def _bundled(filename):
+    path = os.path.join(_BUNDLED_ICON_DIR, filename)
+    return path if os.path.exists(path) else None
+
 
 _REAL_ICON_LOADERS = {
     "ranks": lambda: assets.get_rank_icon_path(80),  # Immortal - no star variant, cleanest single icon
     "wards": lambda: assets.get_item_icon_path_by_name("ward_observer"),
     "couriers": lambda: assets.get_item_icon_path_by_name("courier"),
     "item-icons": lambda: assets.get_item_icon_path_by_name("blink"),
+    "hero-items": lambda: assets.get_item_icon_path_by_name("mask_of_madness"),
     "roshan": lambda: assets.get_world_object_icon_path("roshan"),
     "ancient": lambda: assets.get_world_object_icon_path("ancient"),
     "tormentor": lambda: assets.get_world_object_icon_path("tormentor"),
@@ -29,6 +47,9 @@ _REAL_ICON_LOADERS = {
     "ranged-attack": lambda: assets.get_world_object_icon_path("ranged-attack"),
     "heroes": lambda: assets.get_hero_icon_path_by_name("pudge"),
     "herofx": lambda: assets.get_ability_icon_path("pudge_meat_hook"),
+    "cursors": lambda: _bundled("cursors.png"),
+    "high-five": lambda: _bundled("high_five.png"),
+    "hero-sounds": lambda: _bundled("hero_sounds.png"),
 }
 
 # Every id from mod_catalog.get_categories(), each glyph used exactly
