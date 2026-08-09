@@ -17,7 +17,7 @@ change)."""
 import os
 import subprocess
 
-from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
 import mod_catalog
 import mod_language_settings
 import mod_manager
+from cart_dialog import CartDialog
 from tools_panel import _ToolsPanel
 from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE
 from ui_common import Worker as _Worker
@@ -124,33 +125,6 @@ LANGUAGE_FIELD_STYLE_WARN = (
     "border: 1px solid #e2574c; border-radius: 4px; padding: 4px 8px; "
     "font-family: monospace; font-size: 11px; }"
 )
-
-
-class _BatchInstallWorker(QThread):
-    """Installs a queue of (category_id, mod) jobs one at a time, on one
-    background thread - sequential on purpose: mod_manager's manifest file
-    is a plain read-modify-write JSON file, not safe for concurrent
-    installs to touch at once."""
-    progress = pyqtSignal(int, int, str, bool)  # done_count, total, mod_name, ok
-    finished_all = pyqtSignal()
-
-    def __init__(self, jobs, parent=None):
-        super().__init__(parent)
-        self._jobs = jobs
-
-    def run(self):
-        total = len(self._jobs)
-        for i, (category_id, mod) in enumerate(self._jobs, start=1):
-            try:
-                installer = (
-                    mod_manager.install_loose_mod if mod_manager.is_loose_file_category(category_id)
-                    else mod_manager.install_mod
-                )
-                ok, _message = installer(category_id, mod)
-            except Exception:  # noqa: BLE001 - one bad mod shouldn't kill the queue
-                ok = False
-            self.progress.emit(i, total, mod["name"], ok)
-        self.finished_all.emit()
 
 
 class _ModCard(QFrame):
@@ -609,8 +583,10 @@ class _CategoryPage(QWidget):
 
     def refresh_batch_button(self):
         count = len(self._get_selected())
-        self._batch_btn.setText(f"Установить выбранное ({count})" if count else "Установить выбранное")
-        self._batch_btn.setEnabled(count > 0)
+        # Always enabled, even at 0 - the cart dialog is also how saved
+        # presets get loaded (mod_presets.py), not just how a live
+        # selection gets installed, so there's a reason to open it empty.
+        self._batch_btn.setText(f"Корзина ({count})" if count else "Корзина")
         self._batch_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
         self._clear_selection_btn.setEnabled(count > 0)
 
@@ -742,7 +718,6 @@ class _ModsPage(QWidget):
         # (the grid, and every _ModCard in it, gets thrown away and rebuilt
         # on every category/search change).
         self._selected = {}
-        self._batch_worker = None
         self._categories = mod_catalog.get_categories()
         self._counts = {c["id"]: len(mod_catalog.get_mods(c["id"])) for c in self._categories}
 
@@ -1013,28 +988,21 @@ class _ModsPage(QWidget):
 
     def _on_category_page_action(self, action):
         if action == "clear":
-            self._selected = {}
+            self._selected.clear()
             self._category_page.refresh_batch_button()
             self._category_page._rebuild_grid()
         elif action == "install":
-            self._start_batch_install()
+            self._open_cart()
 
-    def _start_batch_install(self):
-        jobs = list(self._selected.items())
-        if not jobs:
-            return
-        self._category_page._batch_btn.setEnabled(False)
-        self._category_page._clear_selection_btn.setEnabled(False)
-        self._batch_worker = _BatchInstallWorker([(cat, mod) for (cat, _name), mod in jobs])
-        self._batch_worker.progress.connect(self._on_batch_progress)
-        self._batch_worker.finished_all.connect(self._on_batch_finished)
-        self._batch_worker.start()
+    def _open_cart(self):
+        # Same dict OBJECT as self._selected, not a copy - the dialog
+        # mutates it in place (item removal, clearing after install), so
+        # closing it needs no separate sync step; _on_cart_change just
+        # refreshes what's already visible behind it.
+        dialog = CartDialog(self, self._selected, on_change=self._on_cart_change)
+        dialog.exec()
+        self._on_cart_change()
 
-    def _on_batch_progress(self, done, total, mod_name, ok):
-        verdict = "OK" if ok else "ошибка"
-        self._category_page.set_status(f"Установка {done}/{total}: {mod_name} — {verdict}")
-
-    def _on_batch_finished(self):
-        self._selected = {}
+    def _on_cart_change(self):
         self._category_page.refresh_batch_button()
         self._category_page._rebuild_grid()
