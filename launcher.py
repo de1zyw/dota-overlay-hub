@@ -30,6 +30,7 @@ from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QCheckBox,
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -48,6 +49,8 @@ from PyQt6.QtWidgets import (
 )
 
 import config
+import discord_presence
+import discord_presence_settings
 import hotkey_settings
 import overlay_position_settings
 import profile_lookup_history
@@ -517,7 +520,71 @@ class _SettingsPage(QWidget):
             layout.addWidget(radio)
         layout.addWidget(self._position_status_label)
 
+        discord_title = QLabel("Discord Rich Presence")
+        discord_title.setStyleSheet(
+            "color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px; "
+            "margin-top: 12px;"
+        )
+        layout.addWidget(discord_title)
+
+        discord_hint = QLabel(
+            "Показывает в твоём Discord-профиле, что открыт Dota Overlay Hub. Нужен свой "
+            "Client ID: discord.com/developers/applications → New Application → скопируй "
+            "\"Application ID\" со страницы General Information."
+        )
+        discord_hint.setWordWrap(True)
+        discord_hint.setStyleSheet("color: #888888; font-family: 'Inter'; font-size: 11px;")
+        layout.addWidget(discord_hint)
+
+        discord_settings = discord_presence_settings.load()
+        self._discord_enabled_checkbox = QCheckBox("Включить")
+        self._discord_enabled_checkbox.setStyleSheet(
+            "color: #cccccc; font-family: 'Inter'; font-size: 12px;"
+        )
+        self._discord_enabled_checkbox.setChecked(discord_settings["enabled"])
+        layout.addWidget(self._discord_enabled_checkbox)
+
+        discord_row = QHBoxLayout()
+        discord_id_label = QLabel("Client ID")
+        discord_id_label.setFixedWidth(160)
+        discord_id_label.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 12px;")
+        discord_row.addWidget(discord_id_label)
+        self._discord_client_id_field = QLineEdit(discord_settings["client_id"])
+        self._discord_client_id_field.setPlaceholderText("например 1234567890123456789")
+        self._discord_client_id_field.setStyleSheet(
+            "QLineEdit { background-color: rgba(255,255,255,10); color: white; "
+            "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 4px 8px; "
+            "font-family: monospace; font-size: 12px; }"
+        )
+        discord_row.addWidget(self._discord_client_id_field)
+        layout.addLayout(discord_row)
+
+        self._discord_status_label = QLabel(
+            "" if discord_presence.available() else "Не установлен пакет pypresence"
+        )
+        self._discord_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
+        layout.addWidget(self._discord_status_label)
+
+        discord_save_btn = QPushButton("Сохранить")
+        discord_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        discord_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        discord_save_btn.clicked.connect(self._on_save_discord)
+        layout.addWidget(discord_save_btn)
+
         layout.addStretch()
+
+    def _on_save_discord(self):
+        enabled = self._discord_enabled_checkbox.isChecked()
+        client_id = self._discord_client_id_field.text().strip()
+        if enabled and not discord_presence_settings.is_valid_client_id(client_id):
+            self._discord_status_label.setText("Client ID выглядит неправильным (только цифры, 15-25 знаков)")
+            return
+        ok = discord_presence_settings.save(enabled, client_id)
+        if ok and enabled:
+            discord_presence.update_async("Dota Overlay Hub", "В хабе")
+        elif ok and not enabled:
+            discord_presence.clear_async()
+        self._discord_status_label.setText("Сохранено" if ok else "Не удалось сохранить")
 
     def _on_position_toggled(self, checked, position):
         if not checked:

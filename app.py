@@ -39,6 +39,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 import config
+import discord_presence
 import error_codes
 import event_log
 import last_match_watcher
@@ -307,6 +308,7 @@ class OverlayApp:
         # doesn't freeze the UI. Only the actual show/hide + render must
         # happen on the main thread, via the bridge signal below.
         event_log.log("HOTKEY", action="self_stats")
+        discord_presence.update_async("Dota Overlay Hub", "Смотрит свою статистику")
         stats = fetch_player_stats(config.MY_ACCOUNT_ID) if config.MY_ACCOUNT_ID else None
         self.bridge.self_stats_ready.emit(stats)
 
@@ -316,6 +318,7 @@ class OverlayApp:
         # actual window show/hide + render must happen on the main
         # thread, via the bridge signal below.
         event_log.log("PROFILE_LOOKUP_HOTKEY")
+        discord_presence.update_async("Dota Overlay Hub", "Смотрит профиль соперника")
         region = profile_lookup_settings.load()
         if region is None:
             event_log.log("PROFILE_LOOKUP_RESULT", stage="no_region")
@@ -361,6 +364,7 @@ class OverlayApp:
         # them wondering if the hotkey did anything for the next several
         # minutes.
         event_log.log("HOTKEY", action="last_match")
+        discord_presence.update_async("Dota Overlay Hub", "Разбирает последний матч")
         self.bridge.last_match_loading.emit()
 
         match_id = last_match_watcher.read_last_match_id(config.MY_ACCOUNT_ID)
@@ -429,6 +433,8 @@ class OverlayApp:
         # game - see prefetch_all_icons()'s own docstring for why a cold
         # cache during a real draft would freeze the UI.
         threading.Thread(target=prefetch_all_icons, daemon=True).start()
+
+        discord_presence.update_async("Dota Overlay Hub", "В хабе")
 
     def run(self):
         self.start_services()
