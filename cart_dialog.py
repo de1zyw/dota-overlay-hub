@@ -28,16 +28,15 @@ ITEM_THUMB_SIZE = 48
 class _WaveProgressBar(QWidget):
     """Animated pill progress bar for the batch-install log, matching the
     reference d2pfx catalog's own "Packing Progress" dialog (a screenshot
-    the user shared 2026-08-09): the filled portion is a tight, angular
-    zigzag in a single solid purple (not a smooth sine, not a multi-color
-    gradient) that keeps travelling while the batch is actively running,
-    a thin flat track continues for the unfilled remainder, and a small
-    white dot marks the boundary between them. Settles into a flat solid
-    fill once the batch finishes so it doesn't keep looking like it's
-    still working after it's done."""
-    _WAVELENGTH = 9.0
-    _AMPLITUDE = 4.0
-    _PHASE_STEP = 4.0
+    the user shared 2026-08-09): the filled portion is a smooth sine
+    wave in a single solid purple that keeps travelling while the batch
+    is actively running, a thin flat track continues for the unfilled
+    remainder, and a small white dot marks the boundary between them.
+    Settles into a flat solid fill once the batch finishes so it doesn't
+    keep looking like it's still working after it's done."""
+    _WAVELENGTH = 16.0
+    _AMPLITUDE = 3.5
+    _PHASE_STEP = 3.0
     _FILL_COLOR = QColor("#B388FF")
 
     def __init__(self, parent=None):
@@ -67,11 +66,7 @@ class _WaveProgressBar(QWidget):
         self.update()
 
     def _wave_y(self, x, mid):
-        # Triangle wave, not sine - a tighter, more angular "squiggle"
-        # closer to the reference site's own zigzag than a smooth curve.
-        t = ((x + self._phase) % self._WAVELENGTH) / self._WAVELENGTH
-        triangle = 4 * abs(t - 0.5) - 1  # ranges -1..1
-        return mid + self._AMPLITUDE * triangle
+        return mid + self._AMPLITUDE * math.sin(2 * math.pi * (x + self._phase) / self._WAVELENGTH)
 
     def paintEvent(self, _event):
         painter = QPainter(self)
