@@ -50,6 +50,8 @@ _REAL_ICON_LOADERS = {
     "cursors": lambda: _bundled("cursors.png"),
     "high-five": lambda: _bundled("high_five.png"),
     "hero-sounds": lambda: _bundled("hero_sounds.png"),
+    "announcers": lambda: assets.get_world_object_icon_path("announcers"),
+    "music": lambda: assets.get_world_object_icon_path("music"),
 }
 
 # Every id from mod_catalog.get_categories(), each glyph used exactly

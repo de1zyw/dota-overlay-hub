@@ -42,6 +42,12 @@ WORLD_OBJECT_ICON_URLS = {
     "towers": "https://liquipedia.net/commons/images/c/c9/Tower_%28Radiant%29_icon_dota2_gameasset.png",
     "creeps": "https://liquipedia.net/commons/images/4/40/Melee_Creep_%28Radiant%29_icon_dota2_gameasset.png",
     "ranged-attack": "https://liquipedia.net/commons/images/1/17/Ranged_Creep_%28Radiant%29_icon_dota2_wikiasset.png",
+    # Valve's own cosmetic-slot badge icons (shown in the in-game shop next
+    # to any item of that type) - the exact same graphic the d2pfx catalog
+    # blurs and puts a big text label over for its own category banners;
+    # this is that same icon at full resolution, no blur/text.
+    "announcers": "https://liquipedia.net/commons/images/b/b4/Cosmetic_icon_Announcer_Kunkka_%26_Tidehunter.png",
+    "music": "https://liquipedia.net/commons/images/9/9e/Cosmetic_icon_Default_Music.png",
 }
 
 os.makedirs(CACHE_DIR, exist_ok=True)
