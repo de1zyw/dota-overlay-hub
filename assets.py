@@ -40,6 +40,8 @@ WORLD_OBJECT_ICON_URLS = {
     "ancient": "https://liquipedia.net/commons/images/6/6f/Ancient_%28Radiant%29_icon_dota2_wikiasset.png",
     "tormentor": "https://liquipedia.net/commons/images/a/a3/Tormentor_%28Radiant%29_icon_dota2_gameasset.png",
     "towers": "https://liquipedia.net/commons/images/c/c9/Tower_%28Radiant%29_icon_dota2_gameasset.png",
+    "creeps": "https://liquipedia.net/commons/images/4/40/Melee_Creep_%28Radiant%29_icon_dota2_gameasset.png",
+    "ranged-attack": "https://liquipedia.net/commons/images/1/17/Ranged_Creep_%28Radiant%29_icon_dota2_wikiasset.png",
 }
 
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -47,6 +49,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 _hero_internal_names = None
 _item_internal_names = None
 ITEM_ICON_BASE = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items"
+ABILITY_ICON_BASE = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/abilities"
 
 
 def _get_hero_internal_name(hero_id):
@@ -123,6 +126,23 @@ def get_item_icon_path_by_name(internal_name):
         return None
     dest = os.path.join(CACHE_DIR, f"item_icon_name_{internal_name}.png")
     return _download(f"{ITEM_ICON_BASE}/{internal_name}.png", dest)
+
+
+def get_hero_icon_path_by_name(internal_name):
+    """Same CDN as get_hero_icon_path, but for a fixed, hand-picked
+    representative hero (e.g. category_icons.py's "Heroes" icon) rather
+    than resolving one from a real hero_id via OpenDota."""
+    if not internal_name:
+        return None
+    dest = os.path.join(CACHE_DIR, f"hero_icon_name_{internal_name}.png")
+    return _download(f"{HERO_ICON_BASE}/{internal_name}.png", dest)
+
+
+def get_ability_icon_path(internal_name):
+    if not internal_name:
+        return None
+    dest = os.path.join(CACHE_DIR, f"ability_icon_{internal_name}.png")
+    return _download(f"{ABILITY_ICON_BASE}/{internal_name}.png", dest)
 
 
 def get_rank_icon_path(rank_tier):

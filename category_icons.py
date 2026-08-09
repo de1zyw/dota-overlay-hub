@@ -25,6 +25,10 @@ _REAL_ICON_LOADERS = {
     "ancient": lambda: assets.get_world_object_icon_path("ancient"),
     "tormentor": lambda: assets.get_world_object_icon_path("tormentor"),
     "towers": lambda: assets.get_world_object_icon_path("towers"),
+    "creeps": lambda: assets.get_world_object_icon_path("creeps"),
+    "ranged-attack": lambda: assets.get_world_object_icon_path("ranged-attack"),
+    "heroes": lambda: assets.get_hero_icon_path_by_name("pudge"),
+    "herofx": lambda: assets.get_ability_icon_path("pudge_meat_hook"),
 }
 
 # Every id from mod_catalog.get_categories(), each glyph used exactly
