@@ -52,6 +52,23 @@ _REAL_ICON_LOADERS = {
     "hero-sounds": lambda: _bundled("hero_sounds.png"),
     "announcers": lambda: assets.get_world_object_icon_path("announcers"),
     "music": lambda: assets.get_world_object_icon_path("music"),
+    # User-supplied Dota-themed icon collection (Telegram custom-emoji packs,
+    # deduped by perceptual hash against the full ~2750-icon set before
+    # picking) - each is a real Dota game-art icon, just not sourced from a
+    # public CDN, hence bundled rather than fetched.
+    "shaders": lambda: _bundled("shaders.png"),
+    "optimization": lambda: _bundled("optimization.png"),
+    "emblems": lambda: _bundled("emblems.png"),
+    "pings": lambda: _bundled("pings.png"),
+    "huds": lambda: _bundled("huds.png"),
+    "creep-deny": lambda: _bundled("creep_deny.png"),
+    "item-effects": lambda: _bundled("item_effects.png"),
+    "ti-bp-effects": lambda: _bundled("ti_bp_effects.png"),
+    "versus-screens": lambda: _bundled("versus_screens.png"),
+    "trees": lambda: _bundled("trees.png"),
+    "terrains": lambda: _bundled("terrains.png"),
+    "pedestal": lambda: _bundled("pedestal.png"),
+    "other": lambda: _bundled("other.png"),
 }
 
 # Every id from mod_catalog.get_categories(), each glyph used exactly
