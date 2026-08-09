@@ -58,7 +58,7 @@ from launcher_checks import (
 from logs_view import list_log_runs
 from mods_page import _ModsPage
 from overlay_window import _GradientPanel
-from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE
+from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE, Worker
 
 _STATUS_COLOR = {
     STATUS_OK: config.COLOR_GREEN,
@@ -191,6 +191,7 @@ class _OverlayCard(QWidget):
         super().__init__()
         self._entry = entry
         self._on_launch_callback = on_launch
+        self._check_worker = None
         # Scoped to #overlayCard specifically - an unscoped rule here would
         # cascade down to every descendant QWidget (a well-known Qt style
         # sheet gotcha), which is what caused each check row to show its own
@@ -238,7 +239,7 @@ class _OverlayCard(QWidget):
 
         self.run_checks()
 
-    def run_checks(self):
+    def _clear_checks_layout(self):
         while self._checks_layout.count():
             item = self._checks_layout.takeAt(0)
             widget = item.widget()
@@ -252,10 +253,44 @@ class _OverlayCard(QWidget):
                 widget.hide()
                 widget.deleteLater()
 
+    def run_checks(self):
+        # Some of these checks hit the network (DNS + a live OpenDota
+        # request, each with its own multi-second timeout budget) - three
+        # cards each running their own checks SYNCHRONOUSLY on the main
+        # thread at hub startup is exactly what made the whole window take
+        # 2+ seconds to even appear (measured, not assumed). Runs on a
+        # background Worker instead; launcher_checks.py's own functions are
+        # documented as plain/Qt-free specifically so this is safe.
+        self._clear_checks_layout()
+        checking_label = QLabel("Проверяю...")
+        checking_label.setStyleSheet(
+            "color: #888888; font-family: 'Inter'; font-size: 11px; background: transparent;"
+        )
+        self._checks_layout.addWidget(checking_label)
+        self._status_pill.setText("")
+        self._launch_btn.setEnabled(False)
+
+        checks = self._entry["checks"]
+        self._check_worker = Worker(lambda: [(label, fn()) for label, fn in checks])
+        self._check_worker.done.connect(self._on_checks_done)
+        self._check_worker.start()
+
+    def _on_checks_done(self, results):
+        self._clear_checks_layout()
+        if isinstance(results, Exception):
+            self._checks_layout.addWidget(_check_item(
+                "Проверка", STATUS_ERROR, f"Внутренняя ошибка проверки: {results}",
+            ))
+            self._status_pill.setText("НЕ ГОТОВО")
+            self._status_pill.setStyleSheet(
+                f"font-family: 'Inter'; font-size: 11px; font-weight: bold; color: {config.COLOR_RED};"
+            )
+            self._launch_btn.setEnabled(False)
+            return
+
         has_error = False
         has_warn = False
-        for label, fn in self._entry["checks"]:
-            status, message = fn()
+        for label, (status, message) in results:
             has_error = has_error or status == STATUS_ERROR
             has_warn = has_warn or status == STATUS_WARN
             self._checks_layout.addWidget(_check_item(label, status, message))
