@@ -17,7 +17,7 @@ change)."""
 import os
 import subprocess
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
@@ -412,6 +412,9 @@ class _LandingPage(QWidget):
     def __init__(self, on_select_category):
         super().__init__()
         self._on_select_category = on_select_category
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._on_resize_settled)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
@@ -482,6 +485,12 @@ class _LandingPage(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        # Debounced - a live window drag fires resizeEvent continuously,
+        # not once at the end. Recomputing on every single one of those
+        # (even just a cheap re-layout) is wasted work piling up mid-drag.
+        self._resize_timer.start(150)
+
+    def _on_resize_settled(self):
         spacing = self._tile_grid.spacing() or 10
         available = max(self.width() - 20, TILE_WIDTH)
         columns = max(1, (available + spacing) // (TILE_WIDTH + spacing))
@@ -502,6 +511,10 @@ class _CategoryPage(QWidget):
         self._current_category = None
         self._all_mods = []
         self._grid_columns = GRID_COLUMNS
+        self._cards = []
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._on_resize_settled)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -584,18 +597,42 @@ class _CategoryPage(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        # Debounced, and settling only triggers a cheap re-layout (see
+        # _on_resize_settled) - NOT a full rebuild. A live window drag
+        # fires resizeEvent continuously; the original version rebuilt
+        # (destroyed + recreated, including re-spinning a fresh preview-
+        # download QThread per card) all 60 cards on every single one of
+        # those, which is exactly what made resizing feel frozen for
+        # seconds - real bug, not a Python-is-slow problem.
+        self._resize_timer.start(150)
+
+    def _on_resize_settled(self):
         columns = self._compute_columns()
         if columns != self._grid_columns:
             self._grid_columns = columns
-            self._rebuild_grid()
+            self._relayout_grid()
+
+    def _relayout_grid(self):
+        """Repositions the ALREADY-BUILT self._cards into the grid at the
+        current column count - no widget destruction, no re-fetching
+        previews. Safe to call as often as needed (window resize)."""
+        while self._grid.count():
+            self._grid.takeAt(0)
+        for i, card in enumerate(self._cards):
+            self._grid.addWidget(card, i // self._grid_columns, i % self._grid_columns)
 
     def _rebuild_grid(self):
+        """Full rebuild: destroys and recreates every card. Only for when
+        the actual mod list changed (new category, new search text) - a
+        pure re-layout (window resize) must go through _relayout_grid()
+        instead, see the comment there for why."""
         while self._grid.count():
             item = self._grid.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.hide()
                 widget.deleteLater()
+        self._cards = []
 
         query = self._search.text().strip().lower()
         filtered = (
@@ -612,6 +649,7 @@ class _CategoryPage(QWidget):
                 checked=key in selected,
                 on_toggle=self._on_toggle,
             )
+            self._cards.append(card)
             self._grid.addWidget(card, i // self._grid_columns, i % self._grid_columns)
 
         if not filtered:
