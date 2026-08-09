@@ -492,7 +492,7 @@ class _LandingPage(QWidget):
 
     def _on_resize_settled(self):
         spacing = self._tile_grid.spacing() or 10
-        available = max(self.width() - 20, TILE_WIDTH)
+        available = max(self._tiles_scroll.viewport().width() - 4, TILE_WIDTH)
         columns = max(1, (available + spacing) // (TILE_WIDTH + spacing))
         if columns != self._tile_columns:
             self._tile_columns = columns
@@ -553,15 +553,15 @@ class _CategoryPage(QWidget):
         self._grid = QGridLayout(self._grid_host)
         self._grid.setSpacing(10)
         self._grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        scroll = QScrollArea()
-        scroll.setWidget(self._grid_host)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(
+        self._scroll = QScrollArea()
+        self._scroll.setWidget(self._grid_host)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setStyleSheet(
             "QScrollArea { background: transparent; } "
             "QScrollArea > QWidget > QWidget { background: transparent; }"
         )
-        layout.addWidget(scroll, 1)
+        layout.addWidget(self._scroll, 1)
 
         self._status_label = QLabel("")
         self._status_label.setStyleSheet("color: #888888; font-family: 'Inter'; font-size: 11px;")
@@ -590,9 +590,12 @@ class _CategoryPage(QWidget):
 
     def _compute_columns(self):
         spacing = self._grid.spacing() or 10
-        # -20 fudge for the scrollbar + a hair of breathing room, so a
-        # column doesn't get clipped right at the edge.
-        available = max(self.width() - 20, CARD_WIDTH)
+        # The scroll area's VIEWPORT width (not self.width(), which
+        # includes margins this widget doesn't actually give the grid,
+        # and was leaving a whole extra column's worth of dead space
+        # unused on wide windows) - a small -4 fudge for the grid's own
+        # inner margins.
+        available = max(self._scroll.viewport().width() - 4, CARD_WIDTH)
         return max(1, (available + spacing) // (CARD_WIDTH + spacing))
 
     def resizeEvent(self, event):
