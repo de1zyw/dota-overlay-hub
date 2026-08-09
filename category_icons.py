@@ -74,6 +74,7 @@ _REAL_ICON_LOADERS = {
     # patches around 2013) - cropped from a real in-game screenshot the
     # user found (Steam Community, "Yelling mic icon", 2013-10-26).
     "sounds": lambda: _bundled("sounds.png"),
+    "river": lambda: _bundled("river.png"),
 }
 
 # Every id from mod_catalog.get_categories(), each glyph used exactly
