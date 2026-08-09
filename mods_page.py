@@ -166,14 +166,24 @@ class _ModCard(QFrame):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
+        # cursors/fonts overwrite a single shared destination (one active
+        # set at a time - see mod_manager.install_loose_mod) - queueing
+        # several for the batch button would just waste downloads on
+        # every one but the last processed, so there's no checkbox to
+        # queue them with at all here.
+        self._exclusive = mod_manager.is_loose_file_category(category_id)
+
         top_row = QHBoxLayout()
         top_row.setSpacing(4)
-        self._checkbox = QCheckBox()
-        self._checkbox.setChecked(checked)
-        self._checkbox.setStyleSheet(CHECKBOX_STYLE)
-        self._checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._checkbox.toggled.connect(self._on_checkbox_toggled)
-        top_row.addWidget(self._checkbox, 0, Qt.AlignmentFlag.AlignTop)
+        if self._exclusive:
+            self._checkbox = None
+        else:
+            self._checkbox = QCheckBox()
+            self._checkbox.setChecked(checked)
+            self._checkbox.setStyleSheet(CHECKBOX_STYLE)
+            self._checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._checkbox.toggled.connect(self._on_checkbox_toggled)
+            top_row.addWidget(self._checkbox, 0, Qt.AlignmentFlag.AlignTop)
         name = QLabel(mod["name"])
         name.setWordWrap(True)
         name.setStyleSheet(
@@ -182,6 +192,13 @@ class _ModCard(QFrame):
         )
         top_row.addWidget(name, 1)
         layout.addLayout(top_row)
+
+        if self._exclusive:
+            exclusive_hint = QLabel("⚡ заменяет текущий")
+            exclusive_hint.setStyleSheet(
+                "color: #b388ff; font-family: 'Inter'; font-size: 9px; background: transparent;"
+            )
+            layout.addWidget(exclusive_hint)
 
         self._preview_label = QLabel()
         self._preview_label.setFixedSize(CARD_WIDTH - 16, PREVIEW_HEIGHT)
@@ -210,6 +227,8 @@ class _ModCard(QFrame):
         installed = mod_manager.is_installed(self._category_id, self._mod["name"])
         self._action_btn.setText("Удалить" if installed else "Установить")
         self._action_btn.setStyleSheet(SECONDARY_BUTTON_STYLE if installed else PRIMARY_BUTTON_STYLE)
+        if self._checkbox is None:
+            return
         # No point queueing an already-installed mod for the batch button -
         # its own "Удалить" already covers that case.
         self._checkbox.setEnabled(not installed)
