@@ -7,10 +7,13 @@ chain: a dependency missing on THIS machine, then no route to the
 internet/OpenDota specifically, then Dota's own files/config. Each layer
 gets its own check so a failure points at the actual broken link instead of
 one generic "stats didn't load"."""
+import functools
 import importlib.util
 import os
 import shutil
 import socket
+import threading
+import time
 
 import config
 import error_codes
@@ -20,6 +23,32 @@ import error_codes
 # through 4 retries with backoff) - a pre-flight check should fail fast, not
 # make the user wait through a retry budget meant for a live match fetch.
 _NETWORK_TIMEOUT_S = 5
+
+# check_dns/check_opendota_reachable appear in all three of the hub's own
+# checklists (LAST_MATCH_CHECKS/SELF_STATS_CHECKS/PROFILE_LOOKUP_CHECKS) -
+# without this, opening the hub (or hitting "Перепроверить" on more than
+# one card) hits the real network 2-3x for the exact same question asked
+# moments apart. Short TTL, not a real cache - "Перепроверить" clicked a
+# minute later still gets a genuinely fresh answer.
+_CHECK_CACHE_TTL_S = 10
+_check_cache = {}
+_check_cache_lock = threading.Lock()
+
+
+def _cached_check(fn):
+    @functools.wraps(fn)
+    def wrapper():
+        now = time.monotonic()
+        with _check_cache_lock:
+            cached = _check_cache.get(fn)
+            if cached and now - cached[0] < _CHECK_CACHE_TTL_S:
+                return cached[1]
+        result = fn()
+        with _check_cache_lock:
+            _check_cache[fn] = (now, result)
+        return result
+    return wrapper
+
 
 STATUS_OK = "ok"
 STATUS_WARN = "warn"
@@ -37,6 +66,7 @@ def check_dependencies():
     return STATUS_OK, "Все зависимости установлены"
 
 
+@_cached_check
 def check_dns():
     # Isolates DNS specifically from every other way a network call can
     # fail below - "DNS не резолвит" and "сервер не отвечает" point at
@@ -54,6 +84,7 @@ def check_dns():
     return STATUS_OK, "DNS резолвит OpenDota"
 
 
+@_cached_check
 def check_opendota_reachable():
     import requests
 
