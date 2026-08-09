@@ -75,8 +75,13 @@ QCheckBox::indicator:disabled {
 # grid so a truncated category still reads as "search to narrow", not as
 # "this is everything".
 MODS_PER_PAGE = 60
+# The MINIMUM a card is allowed to shrink to when deciding how many columns
+# fit - actual on-screen card width is then stretched up from here to fill
+# the row exactly (see _CategoryPage._compute_columns_and_width), so there's
+# never a leftover strip of dead space next to the last column.
 CARD_WIDTH = 230
 PREVIEW_HEIGHT = 155
+_CARD_ASPECT = PREVIEW_HEIGHT / CARD_WIDTH  # preserved as cards stretch
 GRID_COLUMNS = 3  # fallback only - _CategoryPage recomputes this from actual width
 
 # Purely a sidebar grouping label - the catalog itself has no group/section
@@ -149,19 +154,20 @@ class _BatchInstallWorker(QThread):
 
 
 class _ModCard(QFrame):
-    def __init__(self, category_id, mod, checked, on_toggle):
+    def __init__(self, category_id, mod, checked, on_toggle, width=CARD_WIDTH):
         super().__init__()
         self._category_id = category_id
         self._mod = mod
         self._on_toggle = on_toggle
         self._preview_worker = None
         self._action_worker = None
+        self._original_pixmap = None  # full-res, kept around so re-stretching (set_width) never re-blurs a scale-of-a-scale
 
         self.setObjectName("modCard")
         self.setStyleSheet(
             "QFrame#modCard { background-color: rgba(255,255,255,10); border-radius: 12px; }"
         )
-        self.setFixedWidth(CARD_WIDTH)
+        self.setFixedWidth(width)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
@@ -201,7 +207,7 @@ class _ModCard(QFrame):
             layout.addWidget(exclusive_hint)
 
         self._preview_label = QLabel()
-        self._preview_label.setFixedSize(CARD_WIDTH - 16, PREVIEW_HEIGHT)
+        self._preview_label.setFixedSize(width - 16, round((width - 16) * _CARD_ASPECT))
         self._preview_label.setStyleSheet(
             "background-color: rgba(0,0,0,60); border-radius: 4px;"
         )
@@ -254,11 +260,29 @@ class _ModCard(QFrame):
         pixmap = QPixmap(path)
         if pixmap.isNull():
             return
-        scaled = pixmap.scaled(
+        self._original_pixmap = pixmap
+        self._apply_preview_scale()
+
+    def _apply_preview_scale(self):
+        if self._original_pixmap is None:
+            return
+        scaled = self._original_pixmap.scaled(
             self._preview_label.width(), self._preview_label.height(),
             Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
         )
         self._preview_label.setPixmap(scaled)
+
+    def set_width(self, width):
+        """Resizes an already-built card in place (window-resize reflow -
+        see _CategoryPage._relayout_grid) - re-scales from the original,
+        full-res pixmap rather than the previous (already-downscaled) one,
+        so stretching a card back up after shrinking it never looks
+        blurrier than a freshly loaded preview would."""
+        if width == self.width():
+            return
+        self.setFixedWidth(width)
+        self._preview_label.setFixedSize(width - 16, round((width - 16) * _CARD_ASPECT))
+        self._apply_preview_scale()
 
     def _on_action_clicked(self):
         self._action_btn.setEnabled(False)
@@ -511,6 +535,7 @@ class _CategoryPage(QWidget):
         self._current_category = None
         self._all_mods = []
         self._grid_columns = GRID_COLUMNS
+        self._card_width = CARD_WIDTH
         self._cards = []
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
@@ -576,6 +601,7 @@ class _CategoryPage(QWidget):
         self._search.blockSignals(True)
         self._search.clear()
         self._search.blockSignals(False)
+        self._grid_columns, self._card_width = self._compute_columns_and_width()
         self._rebuild_grid()
 
     def refresh_batch_button(self):
@@ -588,15 +614,19 @@ class _CategoryPage(QWidget):
     def set_status(self, text):
         self._status_label.setText(text)
 
-    def _compute_columns(self):
+    def _compute_columns_and_width(self):
         spacing = self._grid.spacing() or 10
         # The scroll area's VIEWPORT width (not self.width(), which
-        # includes margins this widget doesn't actually give the grid,
-        # and was leaving a whole extra column's worth of dead space
-        # unused on wide windows) - a small -4 fudge for the grid's own
-        # inner margins.
+        # includes margins this widget doesn't actually give the grid) -
+        # a small -4 fudge for the grid's own inner margins.
         available = max(self._scroll.viewport().width() - 4, CARD_WIDTH)
-        return max(1, (available + spacing) // (CARD_WIDTH + spacing))
+        columns = max(1, (available + spacing) // (CARD_WIDTH + spacing))
+        # CARD_WIDTH is only the MINIMUM used to decide how many columns
+        # fit - stretch each card up to actually fill the row exactly, so
+        # there's never a leftover strip of dead space next to the last
+        # column (this is what CARD_WIDTH alone used to leave behind).
+        width = int((available - (columns - 1) * spacing) // columns)
+        return columns, max(width, CARD_WIDTH)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -610,18 +640,22 @@ class _CategoryPage(QWidget):
         self._resize_timer.start(150)
 
     def _on_resize_settled(self):
-        columns = self._compute_columns()
-        if columns != self._grid_columns:
+        columns, width = self._compute_columns_and_width()
+        if columns != self._grid_columns or width != self._card_width:
             self._grid_columns = columns
+            self._card_width = width
             self._relayout_grid()
 
     def _relayout_grid(self):
         """Repositions the ALREADY-BUILT self._cards into the grid at the
-        current column count - no widget destruction, no re-fetching
-        previews. Safe to call as often as needed (window resize)."""
+        current column count/width - no widget destruction, no re-
+        fetching previews (each card re-scales from its own cached
+        original pixmap - see _ModCard.set_width). Safe to call as often
+        as needed (window resize)."""
         while self._grid.count():
             self._grid.takeAt(0)
         for i, card in enumerate(self._cards):
+            card.set_width(self._card_width)
             self._grid.addWidget(card, i // self._grid_columns, i % self._grid_columns)
 
     def _rebuild_grid(self):
@@ -651,6 +685,7 @@ class _CategoryPage(QWidget):
                 self._current_category, mod,
                 checked=key in selected,
                 on_toggle=self._on_toggle,
+                width=self._card_width,
             )
             self._cards.append(card)
             self._grid.addWidget(card, i // self._grid_columns, i % self._grid_columns)
