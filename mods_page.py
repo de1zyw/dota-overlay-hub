@@ -75,9 +75,9 @@ QCheckBox::indicator:disabled {
 # grid so a truncated category still reads as "search to narrow", not as
 # "this is everything".
 MODS_PER_PAGE = 60
-CARD_WIDTH = 210
-PREVIEW_HEIGHT = 140
-GRID_COLUMNS = 3
+CARD_WIDTH = 230
+PREVIEW_HEIGHT = 155
+GRID_COLUMNS = 3  # fallback only - _CategoryPage recomputes this from actual width
 
 # Purely a sidebar grouping label - the catalog itself has no group/section
 # concept beyond the flat category list, this mirrors the official Mod
@@ -454,20 +454,40 @@ class _LandingPage(QWidget):
         )
         layout.addWidget(categories_title)
 
-        tiles = [
+        self._tiles = [
             _CategoryTile(cat, len(mod_catalog.get_mods(cat["id"])), self._on_select_category)
             for cat in mod_catalog.get_categories()
         ]
-        tile_grid = _flow_grid(tiles, TILE_COLUMNS)
-        tiles_scroll = QScrollArea()
-        tiles_scroll.setWidget(tile_grid)
-        tiles_scroll.setWidgetResizable(True)
-        tiles_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        tiles_scroll.setStyleSheet(
+        self._tile_host = QWidget()
+        self._tile_grid = QGridLayout(self._tile_host)
+        self._tile_grid.setSpacing(10)
+        self._tile_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._tile_columns = TILE_COLUMNS
+        self._layout_tiles()
+        self._tiles_scroll = QScrollArea()
+        self._tiles_scroll.setWidget(self._tile_host)
+        self._tiles_scroll.setWidgetResizable(True)
+        self._tiles_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._tiles_scroll.setStyleSheet(
             "QScrollArea { background: transparent; } "
             "QScrollArea > QWidget > QWidget { background: transparent; }"
         )
-        layout.addWidget(tiles_scroll, 1)
+        layout.addWidget(self._tiles_scroll, 1)
+
+    def _layout_tiles(self):
+        while self._tile_grid.count():
+            self._tile_grid.takeAt(0)
+        for i, tile in enumerate(self._tiles):
+            self._tile_grid.addWidget(tile, i // self._tile_columns, i % self._tile_columns)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        spacing = self._tile_grid.spacing() or 10
+        available = max(self.width() - 20, TILE_WIDTH)
+        columns = max(1, (available + spacing) // (TILE_WIDTH + spacing))
+        if columns != self._tile_columns:
+            self._tile_columns = columns
+            self._layout_tiles()
 
 
 class _CategoryPage(QWidget):
@@ -481,6 +501,7 @@ class _CategoryPage(QWidget):
         self._on_batch_install = on_batch_install
         self._current_category = None
         self._all_mods = []
+        self._grid_columns = GRID_COLUMNS
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -554,6 +575,20 @@ class _CategoryPage(QWidget):
     def set_status(self, text):
         self._status_label.setText(text)
 
+    def _compute_columns(self):
+        spacing = self._grid.spacing() or 10
+        # -20 fudge for the scrollbar + a hair of breathing room, so a
+        # column doesn't get clipped right at the edge.
+        available = max(self.width() - 20, CARD_WIDTH)
+        return max(1, (available + spacing) // (CARD_WIDTH + spacing))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        columns = self._compute_columns()
+        if columns != self._grid_columns:
+            self._grid_columns = columns
+            self._rebuild_grid()
+
     def _rebuild_grid(self):
         while self._grid.count():
             item = self._grid.takeAt(0)
@@ -577,7 +612,7 @@ class _CategoryPage(QWidget):
                 checked=key in selected,
                 on_toggle=self._on_toggle,
             )
-            self._grid.addWidget(card, i // GRID_COLUMNS, i % GRID_COLUMNS)
+            self._grid.addWidget(card, i // self._grid_columns, i % self._grid_columns)
 
         if not filtered:
             self._status_label.setText("Ничего не найдено")
