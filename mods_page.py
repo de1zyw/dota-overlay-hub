@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
+import category_icons
 import mod_catalog
 import mod_language_settings
 import mod_manager
@@ -559,13 +560,31 @@ class _CategoryPage(QWidget):
 
     def show_category(self, category):
         self._current_category = category["id"]
-        self._title.setText(f"{category['emoji']}  {category['name']}")
+        self._title.setTextFormat(Qt.TextFormat.PlainText)
+        emoji = category_icons.get_emoji(category["id"], category["emoji"])
+        self._title.setText(f"{emoji}  {category['name']}")
+        if category_icons.has_real_icon(category["id"]):
+            cid, name = category["id"], category["name"]
+            worker = _Worker(lambda: category_icons.get_icon_path(cid))
+            worker.done.connect(lambda path: self._on_title_icon_loaded(cid, name, path))
+            worker.start()
+            self._title_icon_worker = worker
         self._all_mods = mod_catalog.get_mods(category["id"])
         self._search.blockSignals(True)
         self._search.clear()
         self._search.blockSignals(False)
         self._grid_columns, self._card_width = self._compute_columns_and_width()
         self._rebuild_grid()
+
+    def _on_title_icon_loaded(self, category_id, name, path):
+        # The user may have already clicked to a different category before
+        # this fetch (cache miss -> real network round trip) came back -
+        # only apply it if the title is still showing the category it was
+        # fetched for.
+        if category_id != self._current_category or not isinstance(path, str) or not os.path.exists(path):
+            return
+        self._title.setTextFormat(Qt.TextFormat.RichText)
+        self._title.setText(f'<img src="file://{path}" width="22" height="22"> &nbsp;{name}')
 
     def set_status(self, text):
         self._status_label.setText(text)
@@ -656,11 +675,38 @@ class _CategoryPage(QWidget):
             self._status_label.setText(f"{len(filtered)} модов")
 
 
-def _sidebar_row_widget(text, count=None, bold=False):
+def _apply_icon_pixmap(label, path):
+    if not isinstance(path, str) or not os.path.exists(path):
+        return
+    pixmap = QPixmap(path).scaled(
+        16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
+    )
+    label.setPixmap(pixmap)
+    label.setText("")
+
+
+def _sidebar_row_widget(text, count=None, bold=False, category_id=None, emoji=""):
     row = QWidget()
     row.setStyleSheet("background: transparent;")
     row_layout = QHBoxLayout(row)
     row_layout.setContentsMargins(6, 3, 6, 3)
+    row_layout.setSpacing(6)
+
+    if category_id is not None:
+        icon_label = QLabel(emoji)
+        icon_label.setFixedWidth(18)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet("background: transparent; font-size: 13px;")
+        row_layout.addWidget(icon_label)
+        if category_icons.has_real_icon(category_id):
+            # Kept alive as an attribute on the row itself - the row widget
+            # lives for as long as it's in the sidebar QListWidget, same
+            # lifetime as the icon it's fetching.
+            worker = _Worker(lambda cid=category_id: category_icons.get_icon_path(cid))
+            worker.done.connect(lambda path, lbl=icon_label: _apply_icon_pixmap(lbl, path))
+            worker.start()
+            row._icon_worker = worker
+
     label = QLabel(text)
     weight = 700 if bold else 500
     label.setStyleSheet(
@@ -829,7 +875,10 @@ class _ModsPage(QWidget):
             self._add_sidebar_item(_sidebar_header_widget(group), selectable=False)
             for cat in cats:
                 self._add_sidebar_item(
-                    _sidebar_row_widget(f"{cat['emoji']}  {cat['name']}", self._counts[cat["id"]]),
+                    _sidebar_row_widget(
+                        cat["name"], self._counts[cat["id"]],
+                        category_id=cat["id"], emoji=category_icons.get_emoji(cat["id"], cat["emoji"]),
+                    ),
                     category_id=cat["id"],
                 )
 

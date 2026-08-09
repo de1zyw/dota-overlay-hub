@@ -26,6 +26,22 @@ FACTION_ICON_URLS = {
     "dire": "https://liquipedia.net/commons/images/2/2c/Dota2_Dire_icon.png",
 }
 
+# Same Liquipedia asset host, same "verify with `file` that it's a real PNG"
+# process as FACTION_ICON_URLS above - used for mods_page.py's category
+# sidebar icons (category_icons.py) where the category is a specific named
+# in-game object (Roshan, the Ancient, ...) with no matching entry on
+# Steam's own item/hero icon CDNs. Found by querying each object's own
+# Liquipedia page for embedded "<Name> (mapicon|icon) dota2 gameasset.png"
+# files (Liquipedia articles list every image used on the page via the
+# ordinary MediaWiki `prop=images` API) and picking the plain/generic one,
+# not a specific cosmetic reskin.
+WORLD_OBJECT_ICON_URLS = {
+    "roshan": "https://liquipedia.net/commons/images/7/75/Roshan_icon_dota2_gameasset.png",
+    "ancient": "https://liquipedia.net/commons/images/6/6f/Ancient_%28Radiant%29_icon_dota2_wikiasset.png",
+    "tormentor": "https://liquipedia.net/commons/images/a/a3/Tormentor_%28Radiant%29_icon_dota2_gameasset.png",
+    "towers": "https://liquipedia.net/commons/images/c/c9/Tower_%28Radiant%29_icon_dota2_gameasset.png",
+}
+
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 _hero_internal_names = None
@@ -99,6 +115,16 @@ def get_item_icon_path(item_id):
     return _download(f"{ITEM_ICON_BASE}/{name}.png", dest)
 
 
+def get_item_icon_path_by_name(internal_name):
+    """Same CDN as get_item_icon_path, but for callers that already know
+    the item's internal name (e.g. a fixed, hand-picked representative
+    icon for a UI element) and have no item_id to resolve it from."""
+    if not internal_name:
+        return None
+    dest = os.path.join(CACHE_DIR, f"item_icon_name_{internal_name}.png")
+    return _download(f"{ITEM_ICON_BASE}/{internal_name}.png", dest)
+
+
 def get_rank_icon_path(rank_tier):
     if not rank_tier:
         return None
@@ -117,6 +143,14 @@ def get_faction_icon_path(team):
     if not url:
         return None
     dest = os.path.join(CACHE_DIR, f"faction_icon_{team}.png")
+    return _download(url, dest)
+
+
+def get_world_object_icon_path(key):
+    url = WORLD_OBJECT_ICON_URLS.get(key)
+    if not url:
+        return None
+    dest = os.path.join(CACHE_DIR, f"world_icon_{key}.png")
     return _download(url, dest)
 
 
