@@ -137,9 +137,23 @@ def list_installed():
 
 
 def _used_filenames():
+    """Every pakNN_dir/pakNN_NNN.vpk name that must NOT be picked for a
+    new install - our own manifest, PLUS whatever .vpk files already
+    physically sit in the mods folder right now. The disk scan matters
+    because that folder isn't exclusively ours: dota2-minify (if the user
+    has it, and it's configured to output to this same language slot -
+    see mod_language_settings.detect_minify_language()) compiles its own
+    mods into pak files there too, and hardcoding "Minify uses pakXX"
+    would silently break the moment Minify's own numbering changes -
+    checking the real directory contents never goes stale."""
     used = set()
     for entry in _load_manifest().values():
         used.update(entry["files"])
+    mods_dir = get_mods_dir()
+    try:
+        used.update(f for f in os.listdir(mods_dir) if f.lower().endswith(".vpk"))
+    except OSError:
+        pass
     return used
 
 

@@ -802,10 +802,15 @@ class _ModsPage(QWidget):
         found = mod_manager.dota_found()
         self._footer_dot.setText("🟢" if found else "🔴")
         mods_dir_name = os.path.basename(mod_manager.get_mods_dir())
-        self._footer_status_label.setText(
-            f"Dota 2 найдена · моды ставятся в {mods_dir_name}" if found
+        minify_language = mod_language_settings.detect_minify_language()
+        synced_with_minify = minify_language is not None and minify_language == mod_manager.get_language()
+        status = f"Dota 2 найдена · моды ставятся в {mods_dir_name}" if found \
             else f"Dota 2 не найдена ({mod_manager.DOTA_GAME_DIR})"
-        )
+        if synced_with_minify:
+            status += " · синхронизировано с Minify"
+        elif minify_language:
+            status += f" · ⚠ у Minify другой язык ({minify_language})"
+        self._footer_status_label.setText(status)
         official = mod_language_settings.is_official(mod_manager.get_language())
         self._language_field.setStyleSheet(
             LANGUAGE_FIELD_STYLE_OK if official else LANGUAGE_FIELD_STYLE_WARN

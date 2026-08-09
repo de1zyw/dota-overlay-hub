@@ -41,7 +41,36 @@ def is_valid(language):
     return bool(_VALID_RE.match(language or ""))
 
 
+# dota2-minify's own config, if it's installed - only ever read, never
+# written. Only two tools can plausibly both drop mods into a Dota
+# language folder on this machine; if both exist and pick DIFFERENT
+# slots, only whichever one matches Dota's actual -language launch option
+# loads - the other silently does nothing. Detecting Minify's own choice
+# and defaulting to it (rather than picking our own independently) is
+# what actually avoids that, not just leaving both on "russian" by luck.
+_MINIFY_CONFIG_PATH = os.path.expanduser(
+    "~/.local/share/dota2-minify/config/minify_config.json"
+)
+
+
+def detect_minify_language():
+    """Returns dota2-minify's own configured output_locale, or None if
+    Minify isn't installed/configured. Never raises."""
+    try:
+        with open(_MINIFY_CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        language = data.get("output_locale")
+        if is_valid(language):
+            return language
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
 def load():
+    """Explicit user choice (this app's own settings file) always wins.
+    Absent that, mirrors Minify's own language if Minify is present -
+    otherwise DEFAULT_LANGUAGE."""
     try:
         with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -50,7 +79,7 @@ def load():
             return language
     except (OSError, json.JSONDecodeError):
         pass
-    return DEFAULT_LANGUAGE
+    return detect_minify_language() or DEFAULT_LANGUAGE
 
 
 def save(language):
