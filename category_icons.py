@@ -81,6 +81,12 @@ _REAL_ICON_LOADERS = {
     # animated. is_animated() below is how callers know to load it as a
     # QMovie instead of a QPixmap.
     "mega-kill": lambda: _bundled("mega_kill.gif"),
+    # No clean generic icon exists anywhere (Liquipedia has thousands of
+    # specific loading-screen cosmetics but no "default" one the way Music
+    # had "Default Music") - just a recognizable, distinct item icon so the
+    # sidebar isn't stuck on an emoji, not meant to literally represent
+    # "backgrounds".
+    "backgrounds": lambda: assets.get_item_icon_path_by_name("aegis"),
 }
 
 _ANIMATED_CATEGORIES = {"mega-kill"}
