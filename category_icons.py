@@ -69,6 +69,11 @@ _REAL_ICON_LOADERS = {
     "terrains": lambda: _bundled("terrains.png"),
     "pedestal": lambda: _bundled("pedestal.png"),
     "other": lambda: _bundled("other.png"),
+    # Dota's own old voice-chat "yelling" indicator (the icon that popped up
+    # near the minimap when a player talked loudly over push-to-talk, in
+    # patches around 2013) - cropped from a real in-game screenshot the
+    # user found (Steam Community, "Yelling mic icon", 2013-10-26).
+    "sounds": lambda: _bundled("sounds.png"),
 }
 
 # Every id from mod_catalog.get_categories(), each glyph used exactly
