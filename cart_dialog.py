@@ -10,7 +10,7 @@ import math
 import os
 
 from PyQt6.QtCore import QPointF, Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QInputDialog, QLabel, QListWidget,
     QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QVBoxLayout,
@@ -26,24 +26,28 @@ ITEM_THUMB_SIZE = 48
 
 
 class _WaveProgressBar(QWidget):
-    """Animated pill progress bar for the batch-install log - the filled
-    portion wiggles like a sine wave while a batch is actively running
-    (echoes the reference catalog's own "Packing Progress" dialog, a
-    screenshot the user shared 2026-08-09), and settles into a flat solid
+    """Animated pill progress bar for the batch-install log, matching the
+    reference d2pfx catalog's own "Packing Progress" dialog (a screenshot
+    the user shared 2026-08-09): the filled portion is a tight, angular
+    zigzag in a single solid purple (not a smooth sine, not a multi-color
+    gradient) that keeps travelling while the batch is actively running,
+    a thin flat track continues for the unfilled remainder, and a small
+    white dot marks the boundary between them. Settles into a flat solid
     fill once the batch finishes so it doesn't keep looking like it's
     still working after it's done."""
-    _WAVELENGTH = 14.0
-    _AMPLITUDE = 2.5
-    _PHASE_STEP = 3.5
+    _WAVELENGTH = 9.0
+    _AMPLITUDE = 4.0
+    _PHASE_STEP = 4.0
+    _FILL_COLOR = QColor("#B388FF")
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(10)
+        self.setFixedHeight(14)
         self._fraction = 0.0
         self._active = False
         self._phase = 0.0
         self._timer = QTimer(self)
-        self._timer.setInterval(40)
+        self._timer.setInterval(35)
         self._timer.timeout.connect(self._tick)
 
     def set_progress(self, done, total):
@@ -63,7 +67,11 @@ class _WaveProgressBar(QWidget):
         self.update()
 
     def _wave_y(self, x, mid):
-        return mid + self._AMPLITUDE * math.sin((x + self._phase) / self._WAVELENGTH)
+        # Triangle wave, not sine - a tighter, more angular "squiggle"
+        # closer to the reference site's own zigzag than a smooth curve.
+        t = ((x + self._phase) % self._WAVELENGTH) / self._WAVELENGTH
+        triangle = 4 * abs(t - 0.5) - 1  # ranges -1..1
+        return mid + self._AMPLITUDE * triangle
 
     def paintEvent(self, _event):
         painter = QPainter(self)
@@ -73,19 +81,16 @@ class _WaveProgressBar(QWidget):
         fill_x = max(0.0, min(w, self._fraction * w))
 
         if fill_x < w:
-            track_pen = QPen(QColor(255, 255, 255, 30))
-            track_pen.setWidth(3)
+            track_pen = QPen(QColor(255, 255, 255, 35))
+            track_pen.setWidth(2)
             track_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(track_pen)
             painter.drawLine(QPointF(fill_x, mid), QPointF(w, mid))
 
         if fill_x > 0:
-            gradient = QLinearGradient(0, 0, fill_x, 0)
-            gradient.setColorAt(0, QColor("#FF9CE3"))
-            gradient.setColorAt(0.5, QColor("#B388FF"))
-            gradient.setColorAt(1, QColor("#7DD3FC"))
-            fill_pen = QPen(QBrush(gradient), 3)
+            fill_pen = QPen(self._FILL_COLOR, 3)
             fill_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            fill_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(fill_pen)
             path = QPainterPath()
             if self._active:
@@ -100,7 +105,7 @@ class _WaveProgressBar(QWidget):
             painter.drawPath(path)
 
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 230))
+        painter.setBrush(QColor(255, 255, 255, 235))
         end_y = self._wave_y(fill_x, mid) if self._active else mid
         painter.drawEllipse(QPointF(fill_x, end_y), 3, 3)
 
