@@ -6,10 +6,11 @@ step progress log. Modeled on the reference catalog's own cart/pack UI
 of producing a downloadable zip - this app already has its own real
 installer (mod_manager.py), no reason to hand the user a zip to deal
 with by hand afterward."""
+import math
 import os
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import QPointF, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QInputDialog, QLabel, QListWidget,
     QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QVBoxLayout,
@@ -22,6 +23,86 @@ import mod_presets
 from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE, Worker
 
 ITEM_THUMB_SIZE = 48
+
+
+class _WaveProgressBar(QWidget):
+    """Animated pill progress bar for the batch-install log - the filled
+    portion wiggles like a sine wave while a batch is actively running
+    (echoes the reference catalog's own "Packing Progress" dialog, a
+    screenshot the user shared 2026-08-09), and settles into a flat solid
+    fill once the batch finishes so it doesn't keep looking like it's
+    still working after it's done."""
+    _WAVELENGTH = 14.0
+    _AMPLITUDE = 2.5
+    _PHASE_STEP = 3.5
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(10)
+        self._fraction = 0.0
+        self._active = False
+        self._phase = 0.0
+        self._timer = QTimer(self)
+        self._timer.setInterval(40)
+        self._timer.timeout.connect(self._tick)
+
+    def set_progress(self, done, total):
+        self._fraction = (done / total) if total else 0.0
+        self.update()
+
+    def set_active(self, active):
+        self._active = active
+        if active:
+            self._timer.start()
+        else:
+            self._timer.stop()
+        self.update()
+
+    def _tick(self):
+        self._phase += self._PHASE_STEP
+        self.update()
+
+    def _wave_y(self, x, mid):
+        return mid + self._AMPLITUDE * math.sin((x + self._phase) / self._WAVELENGTH)
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w = self.width()
+        mid = self.height() / 2
+        fill_x = max(0.0, min(w, self._fraction * w))
+
+        if fill_x < w:
+            track_pen = QPen(QColor(255, 255, 255, 30))
+            track_pen.setWidth(3)
+            track_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(track_pen)
+            painter.drawLine(QPointF(fill_x, mid), QPointF(w, mid))
+
+        if fill_x > 0:
+            gradient = QLinearGradient(0, 0, fill_x, 0)
+            gradient.setColorAt(0, QColor("#FF9CE3"))
+            gradient.setColorAt(0.5, QColor("#B388FF"))
+            gradient.setColorAt(1, QColor("#7DD3FC"))
+            fill_pen = QPen(QBrush(gradient), 3)
+            fill_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(fill_pen)
+            path = QPainterPath()
+            if self._active:
+                x = 0.0
+                path.moveTo(0, self._wave_y(0, mid))
+                while x < fill_x:
+                    x = min(x + 2.0, fill_x)
+                    path.lineTo(x, self._wave_y(x, mid))
+            else:
+                path.moveTo(0, mid)
+                path.lineTo(fill_x, mid)
+            painter.drawPath(path)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 230))
+        end_y = self._wave_y(fill_x, mid) if self._active else mid
+        painter.drawEllipse(QPointF(fill_x, end_y), 3, 3)
 
 
 class _BatchInstallWorker(QThread):
@@ -219,16 +300,49 @@ class CartDialog(QDialog):
         action_row.addWidget(self._install_btn)
         right.addLayout(action_row)
 
-        self._log_list = QListWidget()
-        self._log_list.setFixedHeight(160)
-        self._log_list.setStyleSheet(
-            "QListWidget { background-color: rgba(0,0,0,30); color: #cccccc; "
-            "font-family: 'Inter'; font-size: 11px; border: none; border-radius: 8px; }"
-            "QListWidget::item { padding: 3px 8px; }"
+        self._progress_panel = QFrame()
+        self._progress_panel.setObjectName("progressPanel")
+        self._progress_panel.setStyleSheet(
+            "QFrame#progressPanel { background-color: rgba(0,0,0,30); border-radius: 10px; }"
+        )
+        progress_layout = QVBoxLayout(self._progress_panel)
+        progress_layout.setContentsMargins(12, 10, 12, 10)
+        progress_layout.setSpacing(8)
+
+        progress_title = QLabel("⚙ Прогресс установки")
+        progress_title.setStyleSheet(
+            "color: white; font-family: 'Inter'; font-size: 12px; font-weight: 700; "
+            "background: transparent;"
+        )
+        progress_layout.addWidget(progress_title)
+
+        self._log_host = QWidget()
+        self._log_layout = QVBoxLayout(self._log_host)
+        self._log_layout.setSpacing(3)
+        self._log_layout.addStretch()
+        self._log_scroll = QScrollArea()
+        self._log_scroll.setWidget(self._log_host)
+        self._log_scroll.setWidgetResizable(True)
+        self._log_scroll.setFixedHeight(130)
+        self._log_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._log_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; } "
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
             + SCROLLBAR_STYLE
         )
-        self._log_list.hide()
-        right.addWidget(self._log_list)
+        progress_layout.addWidget(self._log_scroll)
+
+        self._progress_status_label = QLabel("")
+        self._progress_status_label.setStyleSheet(
+            "color: #999999; font-family: 'Inter'; font-size: 11px; background: transparent;"
+        )
+        progress_layout.addWidget(self._progress_status_label)
+
+        self._progress_bar = _WaveProgressBar()
+        progress_layout.addWidget(self._progress_bar)
+
+        self._progress_panel.hide()
+        right.addWidget(self._progress_panel)
 
         root.addLayout(right, 1)
 
@@ -323,6 +437,29 @@ class CartDialog(QDialog):
         mod_presets.delete(name)
         self._refresh_presets_list()
 
+    # --- install progress log ---
+
+    def _clear_log(self):
+        while self._log_layout.count() > 1:  # keep the trailing stretch
+            item = self._log_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+    def _add_log_row(self, icon, html_text):
+        row = QLabel(f"{icon}&nbsp;&nbsp;{html_text}")
+        row.setTextFormat(Qt.TextFormat.RichText)
+        row.setStyleSheet(
+            "color: #cccccc; font-family: 'Inter'; font-size: 11px; background: transparent;"
+        )
+        self._log_layout.insertWidget(self._log_layout.count() - 1, row)
+        # Layout hasn't recomputed the scroll range yet on this call - defer
+        # the scroll-to-bottom to the next event-loop tick, same trick as
+        # elsewhere in this app for "scroll after content just changed".
+        QTimer.singleShot(0, lambda: self._log_scroll.verticalScrollBar().setValue(
+            self._log_scroll.verticalScrollBar().maximum()
+        ))
+
     # --- install ---
 
     def _on_install(self):
@@ -330,22 +467,31 @@ class CartDialog(QDialog):
         if not jobs:
             return
         self._install_btn.setEnabled(False)
-        self._log_list.show()
-        self._log_list.clear()
-        self._log_list.addItem(f"Начинаю установку {len(jobs)} мод(ов)...")
+        self._clear_log()
+        self._progress_panel.show()
+        self._progress_bar.set_progress(0, len(jobs))
+        self._progress_bar.set_active(True)
+        self._progress_status_label.setText(f"Обрабатываю 0/{len(jobs)} мод(ов)...")
+        self._add_log_row("🚀", "Начинаю установку...")
+        self._add_log_row("📦", f"В очереди: <b>{len(jobs)}</b> мод(ов)")
         self._batch_worker = _BatchInstallWorker([(cat, mod) for (cat, _name), mod in jobs])
         self._batch_worker.progress.connect(self._on_progress)
         self._batch_worker.finished_all.connect(self._on_install_finished)
         self._batch_worker.start()
 
     def _on_progress(self, done, total, mod_name, ok):
-        mark = "✅" if ok else "❌"
-        self._log_list.addItem(f"{mark} {mod_name} ({done}/{total})")
-        self._log_list.scrollToBottom()
+        if ok:
+            self._add_log_row("✅", f'Установлен <b style="color:#a3e6a3;">{mod_name}</b>')
+        else:
+            self._add_log_row("❌", f'Не удалось: <b style="color:#e2574c;">{mod_name}</b>')
+        self._progress_bar.set_progress(done, total)
+        self._progress_status_label.setText(f"Обрабатываю {done}/{total} мод(ов)...")
 
     def _on_install_finished(self):
-        self._log_list.addItem("Готово — все моды обработаны!")
-        self._log_list.scrollToBottom()
+        self._progress_bar.set_active(False)
+        self._progress_bar.set_progress(1, 1)
+        self._progress_status_label.setText("Готово!")
+        self._add_log_row("🎉", "<b>Готово</b> — все моды обработаны!")
         self._selected.clear()
         self._on_change()
         self._refresh_items()

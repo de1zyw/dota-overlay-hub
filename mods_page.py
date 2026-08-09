@@ -20,8 +20,8 @@ import subprocess
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+    QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QPushButton,
     QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -503,11 +503,10 @@ class _CategoryPage(QWidget):
     """One category's own browsable mod grid - search, multi-select
     checkboxes, batch install. Everything below the sidebar/landing page
     that used to be _ModsPage's own body before the redesign."""
-    def __init__(self, get_selected, on_toggle, on_batch_install):
+    def __init__(self, get_selected, on_toggle):
         super().__init__()
         self._get_selected = get_selected
         self._on_toggle = on_toggle
-        self._on_batch_install = on_batch_install
         self._current_category = None
         self._all_mods = []
         self._grid_columns = GRID_COLUMNS
@@ -537,17 +536,6 @@ class _CategoryPage(QWidget):
         )
         self._search.textChanged.connect(self._rebuild_grid)
         search_bar.addWidget(self._search, 1)
-
-        self._clear_selection_btn = QPushButton("Очистить выбор")
-        self._clear_selection_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
-        self._clear_selection_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._clear_selection_btn.clicked.connect(lambda: self._on_batch_install("clear"))
-        search_bar.addWidget(self._clear_selection_btn)
-
-        self._batch_btn = QPushButton()
-        self._batch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._batch_btn.clicked.connect(lambda: self._on_batch_install("install"))
-        search_bar.addWidget(self._batch_btn)
         layout.addLayout(search_bar)
 
         self._grid_host = QWidget()
@@ -569,8 +557,6 @@ class _CategoryPage(QWidget):
         self._status_label.setStyleSheet("color: #888888; font-family: 'Inter'; font-size: 11px;")
         layout.addWidget(self._status_label)
 
-        self.refresh_batch_button()
-
     def show_category(self, category):
         self._current_category = category["id"]
         self._title.setText(f"{category['emoji']}  {category['name']}")
@@ -580,15 +566,6 @@ class _CategoryPage(QWidget):
         self._search.blockSignals(False)
         self._grid_columns, self._card_width = self._compute_columns_and_width()
         self._rebuild_grid()
-
-    def refresh_batch_button(self):
-        count = len(self._get_selected())
-        # Always enabled, even at 0 - the cart dialog is also how saved
-        # presets get loaded (mod_presets.py), not just how a live
-        # selection gets installed, so there's a reason to open it empty.
-        self._batch_btn.setText(f"Корзина ({count})" if count else "Корзина")
-        self._batch_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
-        self._clear_selection_btn.setEnabled(count > 0)
 
     def set_status(self, text):
         self._status_label.setText(text)
@@ -775,7 +752,6 @@ class _ModsPage(QWidget):
         self._category_page = _CategoryPage(
             get_selected=lambda: self._selected,
             on_toggle=self._on_card_toggle,
-            on_batch_install=self._on_category_page_action,
         )
         self._stack.addWidget(self._landing_page)
         self._stack.addWidget(self._category_page)
@@ -801,55 +777,26 @@ class _ModsPage(QWidget):
         footer_layout.addWidget(self._footer_status_label)
         footer_layout.addStretch()
 
-        # Editable, not just a static "-language russian" label - lets the
-        # user point installs at whatever OFFICIAL Dota language slot they
-        # want (e.g. "english"). Valve now blocks arbitrary custom slots
-        # ("123", "minify", etc) - only real language folders still work,
-        # per the catalog's own site notice (2026-08-08) - hence the
-        # default is "russian", not a made-up custom name, and non-
-        # official values get flagged, not silently accepted.
-        lang_label = QLabel("-language:")
-        lang_label.setStyleSheet("color: #999999; font-family: 'Inter'; font-size: 11px; background: transparent;")
-        footer_layout.addWidget(lang_label)
-        self._language_field = QLineEdit(mod_manager.get_language())
-        self._language_field.setFixedWidth(90)
-        self._language_field.setToolTip(
-            "Valve заблокировала кастомные -language (123, minify и т.п.) — работают только "
-            "официальные языки Dota (russian, english, ...). Даже для английской Dota "
-            "рекомендуют russian — эта папка точно поддерживается."
-        )
-        footer_layout.addWidget(self._language_field)
-        save_lang_btn = QPushButton("Сохранить")
-        save_lang_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
-        save_lang_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_lang_btn.clicked.connect(self._on_save_language)
-        footer_layout.addWidget(save_lang_btn)
-        copy_btn = QPushButton("Скопировать")
-        copy_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
-        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        copy_btn.clicked.connect(self._copy_launch_option)
-        footer_layout.addWidget(copy_btn)
-
         open_folder_btn = QPushButton("Открыть папку модов")
         open_folder_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
         open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         open_folder_btn.clicked.connect(self._open_mods_folder)
         footer_layout.addWidget(open_folder_btn)
 
-        # Same right-edge, highest-visual-weight placement as the
-        # reference Mod Manager's own "▶ Играть" button - launches Dota
-        # straight through Steam's own protocol handler (steamapps' own
-        # launch machinery, incl. whatever -language/launch options are
-        # already configured in Steam - this button doesn't duplicate or
-        # bypass that).
-        play_btn = QPushButton("▶ Играть")
-        play_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
-        play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        play_btn.clicked.connect(self._launch_dota)
-        footer_layout.addWidget(play_btn)
+        self._clear_selection_btn = QPushButton("Очистить выбор")
+        self._clear_selection_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self._clear_selection_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clear_selection_btn.clicked.connect(lambda: self._on_category_page_action("clear"))
+        footer_layout.addWidget(self._clear_selection_btn)
+
+        self._batch_btn = QPushButton()
+        self._batch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._batch_btn.clicked.connect(lambda: self._on_category_page_action("install"))
+        footer_layout.addWidget(self._batch_btn)
         layout.addWidget(footer)
 
         self._refresh_footer()
+        self._refresh_cart_buttons()
 
     def _add_sidebar_item(self, widget, category_id=..., selectable=True):
         item = QListWidgetItem()
@@ -927,56 +874,20 @@ class _ModsPage(QWidget):
         elif minify_language:
             status += f" · ⚠ у Minify другой язык ({minify_language})"
         self._footer_status_label.setText(status)
-        official = mod_language_settings.is_official(mod_manager.get_language())
-        self._language_field.setStyleSheet(
-            LANGUAGE_FIELD_STYLE_OK if official else LANGUAGE_FIELD_STYLE_WARN
-        )
-
-    def _copy_launch_option(self):
-        QApplication.clipboard().setText(mod_manager.get_launch_option())
 
     def _open_mods_folder(self):
         mods_dir = mod_manager.get_mods_dir()
         os.makedirs(mods_dir, exist_ok=True)
         subprocess.Popen(["xdg-open", mods_dir])
 
-    def _launch_dota(self):
-        # steam://rungameid/<appid> is Steam's own documented protocol
-        # handler - goes through Steam's normal launch path (whatever
-        # launch options/compat tool are already configured there), not a
-        # separate/duplicate way of starting the game.
-        subprocess.Popen(["xdg-open", "steam://rungameid/570"])
-
-    def _on_save_language(self):
-        new_language = self._language_field.text().strip()
-        if new_language == mod_manager.get_language():
-            return
-        if not mod_language_settings.is_valid(new_language):
-            self._footer_status_label.setText(
-                "Недопустимое имя (буквы/цифры/дефис/подчёркивание, до 32 символов)"
-            )
-            return
-        installed_count = len(mod_manager.list_installed())
-        migrate = True
-        if installed_count:
-            choice = QMessageBox.question(
-                self, "Смена языка модов",
-                f"Сейчас через менеджер установлено модов: {installed_count}. Перенести их файлы "
-                f"в новую папку dota_{new_language}? Если нет — они останутся в старой папке, но "
-                "менеджер перестанет их отслеживать (кнопка «Удалить» перестанет их видеть).",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                | QMessageBox.StandardButton.Cancel,
-            )
-            if choice == QMessageBox.StandardButton.Cancel:
-                return
-            migrate = choice == QMessageBox.StandardButton.Yes
-        ok, message = mod_manager.set_language(new_language, migrate=migrate)
-        if ok and not mod_language_settings.is_official(new_language):
-            message += " — ⚠ не официальный язык, Valve может это блокировать, надёжнее russian"
-        self._footer_status_label.setText(message)
-        if ok:
-            self._refresh_footer()
-            self._category_page._rebuild_grid()
+    def _refresh_cart_buttons(self):
+        count = len(self._selected)
+        # Always enabled, even at 0 - the cart dialog is also how saved
+        # presets get loaded (mod_presets.py), not just how a live
+        # selection gets installed, so there's a reason to open it empty.
+        self._batch_btn.setText(f"Корзина ({count})" if count else "Корзина")
+        self._batch_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._clear_selection_btn.setEnabled(count > 0)
 
     def _on_card_toggle(self, category_id, mod, checked):
         key = (category_id, mod["name"])
@@ -984,12 +895,12 @@ class _ModsPage(QWidget):
             self._selected[key] = mod
         else:
             self._selected.pop(key, None)
-        self._category_page.refresh_batch_button()
+        self._refresh_cart_buttons()
 
     def _on_category_page_action(self, action):
         if action == "clear":
             self._selected.clear()
-            self._category_page.refresh_batch_button()
+            self._refresh_cart_buttons()
             self._category_page._rebuild_grid()
         elif action == "install":
             self._open_cart()
@@ -1004,5 +915,5 @@ class _ModsPage(QWidget):
         self._on_cart_change()
 
     def _on_cart_change(self):
-        self._category_page.refresh_batch_button()
+        self._refresh_cart_buttons()
         self._category_page._rebuild_grid()

@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -52,6 +53,8 @@ import config
 import discord_presence
 import discord_presence_settings
 import hotkey_settings
+import mod_language_settings
+import mod_manager
 import overlay_position_settings
 import profile_lookup_history
 from launcher_checks import (
@@ -59,7 +62,7 @@ from launcher_checks import (
     STATUS_ERROR, STATUS_OK, STATUS_WARN,
 )
 from logs_view import list_log_runs
-from mods_page import _ModsPage
+from mods_page import LANGUAGE_FIELD_STYLE_OK, LANGUAGE_FIELD_STYLE_WARN, _ModsPage
 from overlay_window import _GradientPanel
 from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE, Worker
 
@@ -461,8 +464,9 @@ class _SettingsPage(QWidget):
         ("last_match", "Разбор последнего матча"),
     ]
 
-    def __init__(self):
+    def __init__(self, on_language_changed=None):
         super().__init__()
+        self._on_language_changed = on_language_changed
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
@@ -520,6 +524,47 @@ class _SettingsPage(QWidget):
             layout.addWidget(radio)
         layout.addWidget(self._position_status_label)
 
+        language_title = QLabel("Язык модов")
+        language_title.setStyleSheet(
+            "color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px; "
+            "margin-top: 12px;"
+        )
+        layout.addWidget(language_title)
+
+        language_hint = QLabel(
+            "-language, в папку которого ставятся моды (и Minify, если он есть). Valve "
+            "заблокировала кастомные значения (123, minify и т.п.) — работают только "
+            "официальные языки Dota (russian, english, ...). Даже для английской Dota "
+            "надёжнее russian — эта папка точно поддерживается."
+        )
+        language_hint.setWordWrap(True)
+        language_hint.setStyleSheet("color: #888888; font-family: 'Inter'; font-size: 11px;")
+        layout.addWidget(language_hint)
+
+        language_row = QHBoxLayout()
+        language_id_label = QLabel("-language")
+        language_id_label.setFixedWidth(160)
+        language_id_label.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 12px;")
+        language_row.addWidget(language_id_label)
+        self._language_field = QLineEdit(mod_manager.get_language())
+        self._language_field.setStyleSheet(
+            LANGUAGE_FIELD_STYLE_OK
+            if mod_language_settings.is_official(mod_manager.get_language())
+            else LANGUAGE_FIELD_STYLE_WARN
+        )
+        language_row.addWidget(self._language_field)
+        layout.addLayout(language_row)
+
+        self._language_status_label = QLabel("")
+        self._language_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
+        layout.addWidget(self._language_status_label)
+
+        language_save_btn = QPushButton("Сохранить")
+        language_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        language_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        language_save_btn.clicked.connect(self._on_save_language)
+        layout.addWidget(language_save_btn)
+
         discord_title = QLabel("Discord Rich Presence")
         discord_title.setStyleSheet(
             "color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px; "
@@ -572,6 +617,42 @@ class _SettingsPage(QWidget):
         layout.addWidget(discord_save_btn)
 
         layout.addStretch()
+
+    def _on_save_language(self):
+        new_language = self._language_field.text().strip()
+        if new_language == mod_manager.get_language():
+            return
+        if not mod_language_settings.is_valid(new_language):
+            self._language_status_label.setText(
+                "Недопустимое имя (буквы/цифры/дефис/подчёркивание, до 32 символов)"
+            )
+            return
+        installed_count = len(mod_manager.list_installed())
+        migrate = True
+        if installed_count:
+            choice = QMessageBox.question(
+                self, "Смена языка модов",
+                f"Сейчас через менеджер установлено модов: {installed_count}. Перенести их файлы "
+                f"в новую папку dota_{new_language}? Если нет — они останутся в старой папке, но "
+                "менеджер перестанет их отслеживать (кнопка «Удалить» перестанет их видеть).",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
+            )
+            if choice == QMessageBox.StandardButton.Cancel:
+                return
+            migrate = choice == QMessageBox.StandardButton.Yes
+        ok, message = mod_manager.set_language(new_language, migrate=migrate)
+        if ok and not mod_language_settings.is_official(new_language):
+            message += " — ⚠ не официальный язык, Valve может это блокировать, надёжнее russian"
+        self._language_status_label.setText(message)
+        if ok:
+            self._language_field.setStyleSheet(
+                LANGUAGE_FIELD_STYLE_OK
+                if mod_language_settings.is_official(new_language)
+                else LANGUAGE_FIELD_STYLE_WARN
+            )
+            if self._on_language_changed:
+                self._on_language_changed()
 
     def _on_save_discord(self):
         enabled = self._discord_enabled_checkbox.isChecked()
@@ -762,7 +843,7 @@ class LauncherWindow(QWidget):
         )
         self._mods_page = _ModsPage()
         self._logs_page = _LogsPage()
-        self._settings_page = _SettingsPage()
+        self._settings_page = _SettingsPage(on_language_changed=self._mods_page._refresh_footer)
         self._history_page = _HistoryPage()
         self._stack.addWidget(overlays_scroll)
         self._stack.addWidget(self._mods_page)
