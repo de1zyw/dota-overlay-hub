@@ -7,3 +7,6 @@ gsi_captures.jsonl
 .mod_tools_cache/
 installed_mods.json
 logs/
+steam_account_override.txt
+steam_library_override.txt
+build_version.txt
