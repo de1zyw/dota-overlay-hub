@@ -582,9 +582,7 @@ class _SettingsPage(QWidget):
         layout.addWidget(discord_title)
 
         discord_hint = QLabel(
-            "Показывает в твоём Discord-профиле, что открыт Dota Overlay Hub. Нужен свой "
-            "Client ID: discord.com/developers/applications → New Application → скопируй "
-            "\"Application ID\" со страницы General Information."
+            "Показывает в твоём Discord-профиле, что открыт Dota Overlay Hub."
         )
         discord_hint.setWordWrap(True)
         discord_hint.setStyleSheet("color: #888888; font-family: 'Inter'; font-size: 11px;")
@@ -597,21 +595,6 @@ class _SettingsPage(QWidget):
         )
         self._discord_enabled_checkbox.setChecked(discord_settings["enabled"])
         layout.addWidget(self._discord_enabled_checkbox)
-
-        discord_row = QHBoxLayout()
-        discord_id_label = QLabel("Client ID")
-        discord_id_label.setFixedWidth(160)
-        discord_id_label.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 12px;")
-        discord_row.addWidget(discord_id_label)
-        self._discord_client_id_field = QLineEdit(discord_settings["client_id"])
-        self._discord_client_id_field.setPlaceholderText("например 1234567890123456789")
-        self._discord_client_id_field.setStyleSheet(
-            "QLineEdit { background-color: rgba(255,255,255,10); color: white; "
-            "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 4px 8px; "
-            "font-family: monospace; font-size: 12px; }"
-        )
-        discord_row.addWidget(self._discord_client_id_field)
-        layout.addLayout(discord_row)
 
         self._discord_status_label = QLabel(
             "" if discord_presence.available() else "Не установлен пакет pypresence"
@@ -690,11 +673,7 @@ class _SettingsPage(QWidget):
 
     def _on_save_discord(self):
         enabled = self._discord_enabled_checkbox.isChecked()
-        client_id = self._discord_client_id_field.text().strip()
-        if enabled and not discord_presence_settings.is_valid_client_id(client_id):
-            self._discord_status_label.setText("Client ID выглядит неправильным (только цифры, 15-25 знаков)")
-            return
-        ok = discord_presence_settings.save(enabled, client_id)
+        ok = discord_presence_settings.save(enabled, discord_presence_settings.DEFAULT_CLIENT_ID)
         if ok and enabled:
             discord_presence.update_async("Dota Overlay Hub", "В хабе")
         elif ok and not enabled:
