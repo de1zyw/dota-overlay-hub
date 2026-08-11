@@ -17,6 +17,7 @@ import time
 
 import config
 import error_codes
+import platform_utils
 
 # Deliberately short and independent of opendota_client.py's own
 # throttle/retry machinery (which can legitimately take up to ~30s working
@@ -144,6 +145,13 @@ def check_gsi_port_free():
 
 
 def check_portal_available():
+    # The XDG portal is a Linux/Wayland-only mechanism (ocr_capture.py
+    # only ever reaches for it as a fallback there) - mss alone captures
+    # the screen natively on Windows (real OS APIs, no compositor
+    # permission model to work around), so there's nothing to check here
+    # at all on that platform.
+    if platform_utils.IS_WINDOWS:
+        return STATUS_OK, "Не требуется на Windows (используется прямой захват экрана)"
     # Confirms the mechanism OCR screenshots depend on (portal_capture.py)
     # is even present, without actually calling Screenshot() here - that
     # would pop the real permission dialog at check-time, which belongs to
@@ -225,8 +233,14 @@ def check_steam_account_self_stats():
 
 def check_tesseract():
     if not shutil.which("tesseract"):
+        hint = (
+            "скачай установщик UB-Mannheim (tesseract-ocr-w64), при установке отметь "
+            "Russian в дополнительных языках, и добавь путь в PATH"
+            if platform_utils.IS_WINDOWS
+            else "sudo pacman -S tesseract tesseract-data-rus tesseract-data-eng (Arch/CachyOS)"
+        )
         return STATUS_ERROR, (
-            "tesseract не найден — установи: sudo pacman -S tesseract tesseract-data-rus tesseract-data-eng (Arch/CachyOS) "
+            f"tesseract не найден — установи: {hint} "
             f"{error_codes.tag(error_codes.TESSERACT_MISSING)}"
         )
     # ocr_capture.py always reads with lang="rus+eng" - tesseract silently
@@ -248,9 +262,14 @@ def check_tesseract():
         )
     missing = {"rus", "eng"} - installed
     if missing:
+        lang_hint = (
+            "перезапусти установщик UB-Mannheim и отметь недостающие языки в Additional language data"
+            if platform_utils.IS_WINDOWS
+            else f"sudo pacman -S {' '.join(f'tesseract-data-{m}' for m in sorted(missing))}"
+        )
         return STATUS_WARN, (
             f"tesseract установлен, но не хватает языковых пакетов: {', '.join(sorted(missing))} "
-            f"— установи: sudo pacman -S {' '.join(f'tesseract-data-{m}' for m in sorted(missing))} "
+            f"— установи: {lang_hint} "
             f"(иначе OCR будет читать эти буквы как другой алфавит, без явной ошибки) "
             f"{error_codes.tag(error_codes.TESSERACT_LANG_MISSING)}"
         )

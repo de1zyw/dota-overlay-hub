@@ -175,7 +175,10 @@ class _ToolsPanel(QFrame):
 
     def _on_background(self):
         if not mod_tools.background_changer_available():
-            self._status_label.setText("Нужен ffmpeg: sudo pacman -S ffmpeg")
+            # Unreachable in practice on Windows (the button itself is
+            # disabled there, see __init__) - this only fires on Linux
+            # without ffmpeg, kept as a second layer of defense.
+            self._status_label.setText("Нужен ffmpeg: sudo pacman -S ffmpeg (или пакетный менеджер твоего дистрибутива)")
             return
         media_path, _ = QFileDialog.getOpenFileName(self, "Выбери видео или фото", "", _MEDIA_FILTER)
         if not media_path:

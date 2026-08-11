@@ -947,6 +947,29 @@ class LauncherWindow(QWidget):
 _SINGLE_INSTANCE_KEY = "dota-overlay-hub-single-instance"
 
 
+def _ensure_gsi_cfg_installed():
+    """Copies the bundled GSI config into Dota's own gamestate_integration
+    folder if Dota's been found and it isn't there yet - idempotent, so
+    safe to just call on every startup instead of requiring a separate
+    one-time install step (install.sh used to be the only place this
+    happened; a frozen .exe has no shell script to run at all, so this
+    needs to live in the app itself to work on every platform)."""
+    dota_dir = os.path.dirname(config.SERVER_LOG_PATH)
+    if not os.path.isdir(dota_dir):
+        return
+    dest = os.path.join(config.GSI_CFG_DIR, "gamestate_integration_dota_overlay.cfg")
+    if os.path.isfile(dest):
+        return
+    try:
+        os.makedirs(config.GSI_CFG_DIR, exist_ok=True)
+        with open(platform_utils.resource_path("gamestate_integration_dota_overlay.cfg"), "rb") as src:
+            data = src.read()
+        with open(dest, "wb") as f:
+            f.write(data)
+    except OSError:
+        pass  # Same "auxiliary failure is silent" convention as everywhere else - the checklist card still flags it
+
+
 def _acquire_single_instance():
     """Returns a listening QLocalServer if this is the only running
     instance, or None if another one already holds the key. Connecting
@@ -986,6 +1009,7 @@ if __name__ == "__main__":
         # window in response. Nothing left to do here.
         sys.exit(0)
 
+    _ensure_gsi_cfg_installed()
     window = LauncherWindow()
     window._single_instance_server = single_instance_server
     single_instance_server.newConnection.connect(window._on_activation_request)
