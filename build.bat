@@ -1,6 +1,15 @@
 @echo off
 setlocal enabledelayedexpansion
 
+REM Prinuditelno perehodim v papku, gde lezhit sam etot skript. Bez etogo
+REM esli fayl zapushen "ot imeni administratora" (UAC), Windows podstavlyaet
+REM rabochey papkoy C:\Windows\System32 vmesto realnogo mesta skripta -
+REM realnyy sluchay, poymanyy na zhivoy mashine: pyinstaller togda otkazyvalsya
+REM rabotat pryamo v System32 s oshibkoy "Do not run pyinstaller from
+REM C:\Windows\System32\...". %~dp0 vsegda ukazyvaet na papku samogo skripta
+REM nezavisimo ot togo, kak i otkuda on zapushen.
+cd /d "%~dp0"
+
 REM Ves vyvod etogo skripta (i lyubye oshibki) avtomaticheski sohranyayutsya
 REM v build_log.txt ryadom s etim faylom - eto nuzhno, chtoby pri lyuboy
 REM probleme mozhno bylo prosto otpravit etot odin fayl, a ne peredavat na
