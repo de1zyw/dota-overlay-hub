@@ -68,7 +68,13 @@ from launcher_checks import (
 from logs_view import list_log_runs
 from mods_page import LANGUAGE_FIELD_STYLE_OK, LANGUAGE_FIELD_STYLE_WARN, _ModsPage
 from overlay_window import _GradientPanel
-from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE, Worker
+from ui_common import (
+    PRIMARY_BUTTON_STYLE,
+    SCROLLBAR_STYLE,
+    SECONDARY_BUTTON_STYLE,
+    Worker,
+    _ClickToCopyLabel,
+)
 
 _STATUS_COLOR = {
     STATUS_OK: config.COLOR_GREEN,
@@ -619,7 +625,32 @@ class _SettingsPage(QWidget):
         discord_save_btn.clicked.connect(self._on_save_discord)
         layout.addWidget(discord_save_btn)
 
+        about_title = QLabel("О программе")
+        about_title.setStyleSheet(
+            "color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px; "
+            "margin-top: 12px;"
+        )
+        layout.addWidget(about_title)
+
+        self._about_text = self._build_about_text()
+        about_box = _ClickToCopyLabel(self._about_text)
+        layout.addWidget(about_box)
+
         layout.addStretch()
+
+    def _build_about_text(self):
+        if platform_utils.IS_FROZEN:
+            import update_checker
+            version = update_checker._read_build_tag() or "неизвестно"
+        else:
+            version = "dev (запущено из исходников)"
+        platform_name = "Windows" if platform_utils.IS_WINDOWS else "Linux"
+        return (
+            f"Версия: {version}\n"
+            f"Платформа: {platform_name}\n"
+            f"Python: {sys.version.split()[0]}\n"
+            f"GitHub: github.com/de1zyw/dota-overlay-hub"
+        )
 
     def _on_save_language(self):
         new_language = self._language_field.text().strip()

@@ -4,7 +4,8 @@ of duplicated per-file (which is what the first two copies did, before a
 third caller made that not worth it anymore) or imported from launcher.py
 directly (which would be circular - launcher.py imports mods_page.py to
 build its МОДЫ tab)."""
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, Qt, QTimer, pyqtSignal
+from PyQt6.QtWidgets import QApplication, QLabel
 
 SECONDARY_BUTTON_STYLE = """
 QPushButton {
@@ -106,6 +107,43 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     background: none;
 }
 """
+
+
+class _ClickToCopyLabel(QLabel):
+    """Read-only multi-line info block (version/platform/etc.) that copies
+    its full text to the clipboard on click - a whole-block equivalent of
+    the existing "Скопировать путь" button pattern (logs page), but for
+    text that's meant to be read AND grabbed as one chunk, not just
+    referenced by a separate button next to it."""
+    _BASE_STYLE = (
+        "QLabel { background-color: rgba(255,255,255,10); color: #dddddd; "
+        "border: 1px solid rgba(255,255,255,30); border-radius: 6px; "
+        "padding: 8px 12px; font-family: monospace; font-size: 11px; }"
+    )
+    _FLASH_STYLE = (
+        "QLabel { background-color: rgba(179,136,255,40); color: white; "
+        "border: 1px solid rgba(179,136,255,90); border-radius: 6px; "
+        "padding: 8px 12px; font-family: monospace; font-size: 11px; }"
+    )
+
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self._full_text = text
+        self.setStyleSheet(self._BASE_STYLE)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Нажми, чтобы скопировать")
+        self.setWordWrap(True)
+
+    def mousePressEvent(self, event):
+        QApplication.clipboard().setText(self._full_text)
+        self.setText(self._full_text + "\n\n(скопировано)")
+        self.setStyleSheet(self._FLASH_STYLE)
+        QTimer.singleShot(900, self._reset_flash)
+        super().mousePressEvent(event)
+
+    def _reset_flash(self):
+        self.setText(self._full_text)
+        self.setStyleSheet(self._BASE_STYLE)
 
 
 class Worker(QThread):
