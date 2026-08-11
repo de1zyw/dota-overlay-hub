@@ -1,10 +1,15 @@
-"""Checks whether a newer build is available on GitHub than the one
+"""Checks whether a newer *release* is available on GitHub than the one
 currently running. Only meaningful for a frozen (PyInstaller) build - a
 dev checkout has no baked-in build_version.txt and no build.bat-driven
 update path, so it's simply skipped there. Never raises: any failure
 (no internet, GitHub down, rate-limited) just means "no update info",
 same silent-degrade convention as the rest of this app's network calls.
-"""
+
+Deliberately checks the latest tagged *release*, not raw master HEAD -
+master gets committed to mid-fix constantly during active development;
+comparing against that would nag the user to rebuild into a possibly
+half-broken state. A release is only cut when a point is actually meant
+to be handed to someone."""
 import os
 import subprocess
 
@@ -13,44 +18,45 @@ import requests
 import platform_utils
 
 _REPO = "de1zyw/dota-overlay-hub"
-_COMMITS_URL = f"https://api.github.com/repos/{_REPO}/commits/master"
+_LATEST_RELEASE_URL = f"https://api.github.com/repos/{_REPO}/releases/latest"
 
 
-def _read_build_sha():
+def _read_build_tag():
     try:
         with open(platform_utils.resource_path("build_version.txt"), encoding="utf-8") as f:
-            sha = f.read().strip()
+            tag = f.read().strip()
     except OSError:
         return None
-    return sha or None
+    return tag or None
 
 
-def _fetch_latest_sha(timeout=5):
+def _fetch_latest_release_tag(timeout=5):
     try:
         resp = requests.get(
-            _COMMITS_URL,
+            _LATEST_RELEASE_URL,
             headers={"User-Agent": "dota-overlay-hub-update-check"},
             timeout=timeout,
         )
         resp.raise_for_status()
-        return resp.json()["sha"]
+        return resp.json()["tag_name"]
     except (requests.RequestException, ValueError, KeyError):
         return None
 
 
 def check_for_update():
-    """Returns True only when both SHAs are known and genuinely differ -
-    anything uncertain (missing build marker, network failure) returns
-    False rather than nagging the user with a false positive."""
+    """Returns True only when both tags are known and genuinely differ -
+    anything uncertain (missing build marker, network failure, no
+    releases published yet) returns False rather than nagging the user
+    with a false positive."""
     if not platform_utils.IS_FROZEN:
         return False
-    current = _read_build_sha()
+    current = _read_build_tag()
     if current is None or current == "unknown":
         return False
-    latest = _fetch_latest_sha()
+    latest = _fetch_latest_release_tag()
     if latest is None:
         return False
-    return not latest.startswith(current) and not current.startswith(latest)
+    return latest != current
 
 
 def relaunch_build_and_exit():

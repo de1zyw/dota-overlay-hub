@@ -147,13 +147,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Zapisyvaem, s kakogo commita GitHub sobrana eta versiya - prilozhenie
-REM sveryaet eto so svezhim master pri zapuske, chtoby ponyat, est li
-REM obnovlenie. Esli zapros k GitHub ne proshel (net interneta v etot
-REM moment sborki), prosto pishem "unknown" - prilozhenie togda pro
-REM obnovleniya voobshe ne sprashivaet, vmesto lozhnoy trevogi.
+REM Zapisyvaem tekushiy tag poslednego GitHub Release (ne prosto poslednego
+REM commita v master - master menyaetsya pri kazhdoy melkoy pravke, eto by
+REM zastavlyalo prilozhenie prosit obnovitsya na, vozmozhno, esho ne
+REM dodelannyy kod). Prilozhenie sveryaet eto pri zapuske, chtoby ponyat,
+REM est li obnovlenie. Esli zapros k GitHub ne proshel (net interneta v
+REM etot moment sborki, ili relizov esho net) - prosto pishem "unknown",
+REM prilozhenie togda pro obnovleniya voobshe ne sprashivaet.
 echo unknown> build_version.txt
-powershell -NoProfile -Command "try { $sha = (Invoke-RestMethod -Uri 'https://api.github.com/repos/de1zyw/dota-overlay-hub/commits/master' -UseBasicParsing -Headers @{'User-Agent'='dota-overlay-hub-build'}).sha; if ($sha) { Set-Content -Path 'build_version.txt' -Value $sha -NoNewline } } catch {}"
+powershell -NoProfile -Command "try { $tag = (Invoke-RestMethod -Uri 'https://api.github.com/repos/de1zyw/dota-overlay-hub/releases/latest' -UseBasicParsing -Headers @{'User-Agent'='dota-overlay-hub-build'}).tag_name; if ($tag) { Set-Content -Path 'build_version.txt' -Value $tag -NoNewline } } catch {}"
 
 echo.
 echo [3/5] Sobirayu .exe (mozhet zanyat paru minut)...
