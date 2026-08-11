@@ -1,23 +1,24 @@
 @echo off
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 echo ===============================================
-echo   Dota Overlay Hub - sborka .exe
+echo   Dota Overlay Hub - сборка .exe
 echo ===============================================
 echo.
 
-REM Etot fayl mozhno otpravit odin, bez vsego proekta - esli ryadom net
-REM launcher.py, on sam skachaet ves repozitoriy s GitHub i sobiraet
-REM exe iznutri raspakovannoy papki, a gotovyy .exe polozhit ryadom s
-REM etim samym build.bat (ne vnutri raspakovannoy papki).
+REM Этот файл можно отправить один, без всего проекта - если рядом нет
+REM launcher.py, он сам скачает весь репозиторий с GitHub и соберёт
+REM exe изнутри распакованной папки, а готовый .exe положит рядом с
+REM этим самым build.bat (не внутри распакованной папки).
 set BOOTSTRAPPED=0
 if not exist launcher.py (
     set BOOTSTRAPPED=1
     if not exist dota-overlay-hub-master\launcher.py (
-        echo [0/5] Proekta ryadom net - skachivayu s GitHub...
+        echo [0/5] Проекта рядом нет - скачиваю с GitHub...
         powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://github.com/de1zyw/dota-overlay-hub/archive/refs/heads/master.zip' -OutFile 'dota-overlay-hub.zip'"
         if errorlevel 1 (
-            echo [OSHIBKA] Ne udalos skachat proekt. Proveryay internet-soedinenie.
+            echo [ОШИБКА] Не удалось скачать проект. Проверяй интернет-соединение.
             pause
             exit /b 1
         )
@@ -29,55 +30,55 @@ if not exist launcher.py (
 
 where python >nul 2>nul
 if errorlevel 1 (
-    echo [1/5] Python ne nayden - stavlyu avtomaticheski ^(tikho, bez okon, ne nuzhny prava administratora^)...
+    echo [1/5] Python не найден - ставлю автоматически ^(тихо, без окон, права администратора не нужны^)...
     set "PY_URL=https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
     set "PY_INSTALLER=python-installer.exe"
     powershell -NoProfile -Command "Invoke-WebRequest -Uri '!PY_URL!' -OutFile '!PY_INSTALLER!'"
     if errorlevel 1 (
-        echo [OSHIBKA] Ne udalos skachat Python. Proveryay internet-soedinenie ili
-        echo postav vruchnuyu s https://www.python.org/downloads/ ^(galka "Add python.exe to PATH"^)
-        echo i zapusti build.bat snova.
+        echo [ОШИБКА] Не удалось скачать Python. Проверяй интернет-соединение или
+        echo поставь вручную с https://www.python.org/downloads/ ^(галка "Add python.exe to PATH"^)
+        echo и запусти build.bat снова.
         pause
         exit /b 1
     )
-    echo Ustanavlivayu Python ^(mozhet zanyat do minuty, okno ustanovki ne pokazhetsya^)...
+    echo Устанавливаю Python ^(может занять до минуты, окно установки не появится^)...
     "!PY_INSTALLER!" /quiet InstallAllUsers=0 PrependPath=1 Include_launcher=0 Include_test=0
     if errorlevel 1 (
-        echo [OSHIBKA] Ustanovka Python zavershilas s oshibkoy.
+        echo [ОШИБКА] Установка Python завершилась с ошибкой.
         pause
         exit /b 1
     )
     del /q "!PY_INSTALLER!" >nul 2>nul
-    REM Svezheustanovlennyy Python ne popadaet v PATH etoy uzhe otkrytoy konsoli
-    REM (PrependPath pishet v reestr, no tekushiy protsess cmd.exe ego uzhe ne perechitaet) -
-    REM dobavlyaem ego papku vruchnuyu na etu sessiyu, chtoby ne prosit perezapustit skript.
+    REM Свежеустановленный Python не попадает в PATH этой уже открытой консоли
+    REM (PrependPath пишет в реестр, но текущий процесс cmd.exe его уже не перечитает) -
+    REM добавляем его папку вручную на эту сессию, чтобы не просить перезапустить скрипт.
     set "PYDIR="
     for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do set "PYDIR=%%D"
     if defined PYDIR set "PATH=!PYDIR!;!PYDIR!\Scripts;%PATH%"
     where python >nul 2>nul
     if errorlevel 1 (
-        echo [OSHIBKA] Python ustanovlen, no ne viden v etom okne.
-        echo Zakroy eto okno i zapusti build.bat zanovo - on uzhe uvidit postavlennyy Python.
+        echo [ОШИБКА] Python установлен, но не виден в этом окне.
+        echo Закрой это окно и запусти build.bat заново - он уже увидит поставленный Python.
         pause
         exit /b 1
     )
-    echo Python ustanovlen.
+    echo Python установлен.
 )
 
-echo [2/5] Stavlyu zavisimosti...
+echo [2/5] Ставлю зависимости...
 python -m pip install --upgrade pip >nul
 python -m pip install -r requirements.txt pyinstaller
 if errorlevel 1 (
-    echo [OSHIBKA] Ne udalos postavit zavisimosti - smotri tekst vyshe.
+    echo [ОШИБКА] Не удалось поставить зависимости - смотри текст выше.
     pause
     exit /b 1
 )
 
 echo.
-echo [3/5] Sobirayu .exe (mozhet zanyat paru minut)...
-REM Bez --windowed narochno: konsol ostaetsya vidna, chtoby pri lyuboy
-REM oshibke pri zapuske byl viden nastoyashiy tekst oshibki, a ne prosto
-REM tishina. Ubrat --windowed mozhno pozzhe, kogda vse proveryeno.
+echo [3/5] Собираю .exe (может занять пару минут)...
+REM Без --windowed нарочно: консоль остаётся видна, чтобы при любой
+REM ошибке при запуске был виден настоящий текст ошибки, а не просто
+REM тишина. Убрать --windowed можно позже, когда всё проверено.
 python -m PyInstaller --noconfirm --onefile ^
   --name "Dota Overlay Hub" ^
   --icon icon.ico ^
@@ -87,20 +88,20 @@ python -m PyInstaller --noconfirm --onefile ^
   launcher.py
 
 if errorlevel 1 (
-    echo [OSHIBKA] Sborka ne udalas, smotri tekst vyshe.
+    echo [ОШИБКА] Сборка не удалась, смотри текст выше.
     pause
     exit /b 1
 )
 
 echo.
-echo [4/5] Perenoshu exe...
+echo [4/5] Переношу exe...
 if "%BOOTSTRAPPED%"=="1" (
     move /y "dist\Dota Overlay Hub.exe" "..\Dota Overlay Hub.exe" >nul
 ) else (
     move /y "dist\Dota Overlay Hub.exe" "Dota Overlay Hub.exe" >nul
 )
 
-echo [5/5] Chishu vremennye fayly sborki...
+echo [5/5] Чищу временные файлы сборки...
 rmdir /s /q build >nul 2>nul
 rmdir /s /q dist >nul 2>nul
 del /q "Dota Overlay Hub.spec" >nul 2>nul
@@ -109,12 +110,12 @@ if "%BOOTSTRAPPED%"=="1" cd ..
 
 echo.
 echo ===============================================
-echo   Gotovo! "Dota Overlay Hub.exe" lezhit ryadom
-echo   s etim skriptom.
+echo   Готово! "Dota Overlay Hub.exe" лежит рядом
+echo   с этим скриптом.
 echo.
-echo   VAZHNO: Windows Defender/SmartScreen mozhet
-echo   pokazat preduprezhdenie pri pervom zapuske -
-echo   eto normalno dlya nepodpisannyh .exe, sobrannyh
-echo   iz Python. Zhmi "Podrobnee" -^> "Vse ravno zapustit".
+echo   ВАЖНО: Windows Defender/SmartScreen может
+echo   показать предупреждение при первом запуске -
+echo   это нормально для неподписанных .exe, собранных
+echo   из Python. Жми "Подробнее" -^> "Всё равно запустить".
 echo ===============================================
 pause
