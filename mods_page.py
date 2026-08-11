@@ -394,16 +394,6 @@ class _RecentCard(_ImageTile):
         super().mousePressEvent(event)
 
 
-def _flow_grid(widgets, columns):
-    host = QWidget()
-    grid = QGridLayout(host)
-    grid.setSpacing(10)
-    grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-    for i, w in enumerate(widgets):
-        grid.addWidget(w, i // columns, i % columns)
-    return host
-
-
 class _LandingPage(QWidget):
     """"Все категории" landing view: a recently-added carousel up top, a
     grid of big category tiles below - the entry point before drilling
