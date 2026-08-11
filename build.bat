@@ -1,23 +1,65 @@
 @echo off
 setlocal enabledelayedexpansion
 
-echo ===============================================
-echo   Dota Overlay Hub - sborka .exe
-echo ===============================================
-echo.
+REM Ves vyvod etogo skripta (i lyubye oshibki) avtomaticheski sohranyayutsya
+REM v build_log.txt ryadom s etim faylom - eto nuzhno, chtoby pri lyuboy
+REM probleme mozhno bylo prosto otpravit etot odin fayl, a ne peredavat na
+REM slovah chto bylo na ekrane (okno konsoli pri dvoynom klike po .bat
+REM zakryvaetsya srazu posle zaversheniya i ves tekst teryaetsya navsegda).
+REM
+REM Skript zapuskaet sam sebya povtorno (cherez "call") s redirektom vsego
+REM vyvoda v etot log-fayl, zhdet zaversheniya, potom pokazyvaet ves log
+REM na ekrane odnim kuskom i zhdet knopku pered zakrytiem - tak okno nikogda
+REM ne zakroetsya samo soboy i nikakoy tekst ne propadet.
+if not "%~1"=="~inner~" (
+    echo ===============================================
+    echo   Dota Overlay Hub - sborka .exe
+    echo ===============================================
+    echo.
+    echo Zapuskayu sborku, eto mozhet zanyat neskolko minut.
+    echo Ekran budet molchat pochti do samogo kontsa - eto normalno,
+    echo NE ZAKRYVAY eto okno, prosto podozhdi.
+    echo Ves protsess zapisyvaetsya v build_log.txt ryadom s etim faylom.
+    echo.
+    call "%~f0" ~inner~ > "%~dp0build_log.txt" 2>&1
+    set "RESULT=!errorlevel!"
+    echo.
+    echo --------------- log sborki (build_log.txt) ---------------
+    type "%~dp0build_log.txt"
+    echo ------------------------------------------------------------
+    echo.
+    if "!RESULT!"=="0" (
+        echo ===============================================
+        echo   Gotovo! "Dota Overlay Hub.exe" dolzhen lezhat
+        echo   ryadom s etim skriptom.
+        echo.
+        echo   VAZHNO: Windows Defender/SmartScreen mozhet
+        echo   pokazat preduprezhdenie pri pervom zapuske exe -
+        echo   eto normalno dlya nepodpisannyh .exe, sobrannyh
+        echo   iz Python. Zhmi "Podrobnee" -^> "Vse ravno zapustit".
+        echo ===============================================
+    ) else (
+        echo ===============================================
+        echo   OSHIBKA. Otpravte fayl build_log.txt ^(on lezhit
+        echo   ryadom s etim skriptom^) tomu, kto prosil sobrat
+        echo   programmu - tam polnyy tekst oshibki.
+        echo ===============================================
+    )
+    pause
+    exit /b !RESULT!
+)
+
+REM ============================================================
+REM  Dalshe - realnaya rabota. Ee vyvod uhodit v build_log.txt,
+REM  pauz zdes byt ne dolzhno (oni budut nevidimy i skript
+REM  povisnet, molcha zhdya nazhatiya knopki, kotoruyu nikto ne
+REM  uvidit) - vmesto etogo prosto exit /b 1 s soobsheniem v log.
+REM ============================================================
 
 REM Etot fayl mozhno otpravit odin, bez vsego proekta - esli ryadom net
 REM launcher.py, on sam skachaet ves repozitoriy s GitHub i sobiraet
 REM exe iznutri raspakovannoy papki, a gotovyy .exe polozhit ryadom s
 REM etim samym build.bat (ne vnutri raspakovannoy papki).
-REM
-REM VAZHNO: tekst zdes narochno na translite, ne na kirillitse - real'nyy
-REM test na Windows pokazal, chto dazhe s "chcp 65001" cmd.exe u chasti
-REM lyudey vse ravno lomaet parsing kirillicheskih echo-strok posredi
-REM skripta (slova rvutsya, kuski slov vypolnyayutsya kak otdel'nye
-REM komandy). ASCII - edinstvennyy variant, rabotayushiy garantirovanno
-REM na lyuboy lokali/kodovoy stranitse. Ne vozvrashat kirillicu syuda bez
-REM realnoy proverki na chistoy Windows-mashine.
 set BOOTSTRAPPED=0
 if not exist launcher.py (
     set BOOTSTRAPPED=1
@@ -29,14 +71,12 @@ if not exist launcher.py (
         if not exist dota-overlay-hub.zip set "DL_FAIL=1"
         if defined DL_FAIL (
             echo [OSHIBKA] Ne udalos skachat proekt. Proveryay internet-soedinenie i poprobuy snova.
-            pause
             exit /b 1
         )
         powershell -NoProfile -Command "Expand-Archive -Path 'dota-overlay-hub.zip' -DestinationPath '.' -Force"
         if errorlevel 1 (
             echo [OSHIBKA] Ne udalos raspakovat proekt - fayl mog skachatsya povrezhdennym.
             echo Udali dota-overlay-hub.zip i zapusti build.bat snova.
-            pause
             exit /b 1
         )
         del /q dota-overlay-hub.zip >nul 2>nul
@@ -50,7 +90,7 @@ REM (%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe), kotoraya "nahoditsya",
 REM no nichego realno ne delaet, esli nastoyashiy Python ne postavlen. Tekst
 REM oshibki etoy zaglushki mozhet otlichatsya na raznyh Windows, poetomu ne
 REM parsim tekst "--version" - prosto prosim Python realno vypolnit kod i
-REM sverяем tochnoe chislo na vyhode. Esli eto ne nastoyashiy Python - takogo
+REM sveryaem tochnoe chislo na vyhode. Esli eto ne nastoyashiy Python - takogo
 REM chisla prosto ne budet.
 set "PY_OK="
 for /f "delims=" %%V in ('python -c "print(offline_check_31337)" 2^>nul') do if "%%V"=="31337" set "PY_OK=1"
@@ -66,28 +106,25 @@ if not defined PY_OK (
         echo [OSHIBKA] Ne udalos skachat Python. Proveryay internet-soedinenie ili
         echo postav vruchnuyu s https://www.python.org/downloads/ ^(galka "Add python.exe to PATH"^)
         echo i zapusti build.bat snova.
-        pause
         exit /b 1
     )
-    echo Ustanavlivayu Python ^(mozhet zanyat do minuty, okno ustanovki ne poyavitsya^)...
+    echo Ustanavlivayu Python ^(mozhet zanyat do minuty^)...
     "!PY_INSTALLER!" /quiet InstallAllUsers=0 PrependPath=1 Include_launcher=0 Include_test=0
     if errorlevel 1 (
         echo [OSHIBKA] Ustanovka Python zavershilas s oshibkoy.
-        pause
         exit /b 1
     )
     del /q "!PY_INSTALLER!" >nul 2>nul
     REM Svezheustanovlennyy Python ne popadaet v PATH etoy uzhe otkrytoy konsoli
     REM (PrependPath pishet v reestr, no tekushiy protsess cmd.exe ego uzhe ne perechitaet) -
-    REM dobavlyaem ego papku vruchnuyu na etu sessiyu, chtoby ne prosit perezapustit skript.
+    REM dobavlyaem ego papku vruchnuyu na etu sessiyu.
     set "PYDIR="
     for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do set "PYDIR=%%D"
     if defined PYDIR set "PATH=!PYDIR!;!PYDIR!\Scripts;%PATH%"
     where python >nul 2>nul
     if errorlevel 1 (
-        echo [OSHIBKA] Python ustanovlen, no ne viden v etom okne.
-        echo Zakroy eto okno i zapusti build.bat zanovo - on uzhe uvidit postavlennyy Python.
-        pause
+        echo [OSHIBKA] Python ustanovlen, no ne viden v etoy sessii.
+        echo Zapusti build.bat zanovo - on uzhe uvidit postavlennyy Python.
         exit /b 1
     )
     echo Python ustanovlen.
@@ -98,7 +135,6 @@ python -m pip install --upgrade pip >nul
 python -m pip install -r requirements.txt pyinstaller
 if errorlevel 1 (
     echo [OSHIBKA] Ne udalos postavit zavisimosti - smotri tekst vyshe.
-    pause
     exit /b 1
 )
 
@@ -117,7 +153,6 @@ python -m PyInstaller --noconfirm --onefile ^
 
 if errorlevel 1 (
     echo [OSHIBKA] Sborka ne udalas, smotri tekst vyshe.
-    pause
     exit /b 1
 )
 
@@ -137,13 +172,5 @@ del /q "Dota Overlay Hub.spec" >nul 2>nul
 if "%BOOTSTRAPPED%"=="1" cd ..
 
 echo.
-echo ===============================================
-echo   Gotovo! "Dota Overlay Hub.exe" lezhit ryadom
-echo   s etim skriptom.
-echo.
-echo   VAZHNO: Windows Defender/SmartScreen mozhet
-echo   pokazat preduprezhdenie pri pervom zapuske -
-echo   eto normalno dlya nepodpisannyh .exe, sobrannyh
-echo   iz Python. Zhmi "Podrobnee" -^> "Vse ravno zapustit".
-echo ===============================================
-pause
+echo Vse shagi zaversheny uspeshno.
+exit /b 0
