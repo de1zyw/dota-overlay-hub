@@ -20,6 +20,7 @@ import requests
 import config
 import mod_catalog
 import mod_language_settings
+import platform_utils
 
 DOTA_GAME_DIR = os.path.dirname(config.SERVER_LOG_PATH)  # .../dota 2 beta/game/dota
 # dota_<language> add-on folders are siblings of "dota" itself, directly
@@ -30,7 +31,7 @@ DOTA_GAME_DIR = os.path.dirname(config.SERVER_LOG_PATH)  # .../dota 2 beta/game/
 # version never actually worked, Dota was never looking there.
 _ADDON_ROOT_DIR = os.path.dirname(DOTA_GAME_DIR)  # .../dota 2 beta/game
 
-_MANIFEST_PATH = os.path.join(os.path.dirname(__file__), "installed_mods.json")
+_MANIFEST_PATH = os.path.join(platform_utils.data_dir(), "installed_mods.json")
 
 _session = requests.Session()
 
@@ -48,7 +49,7 @@ LOOSE_FILE_CATEGORIES = {
     "fonts": {"zip_subdir": "assets/custom", "dest_subdir": os.path.join("panorama", "fonts")},
 }
 
-_BACKUP_ROOT = os.path.join(os.path.dirname(__file__), ".loose_mod_backups")
+_BACKUP_ROOT = os.path.join(platform_utils.data_dir(), ".loose_mod_backups")
 
 
 def is_loose_file_category(category_id):

@@ -6,7 +6,9 @@ not a crash."""
 import json
 import os
 
-SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hotkey_settings.json")
+import platform_utils
+
+SETTINGS_PATH = os.path.join(platform_utils.data_dir(), "hotkey_settings.json")
 
 DEFAULTS = {
     "toggle": "<ctrl>+<alt>+d",

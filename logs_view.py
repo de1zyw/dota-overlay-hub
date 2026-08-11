@@ -6,6 +6,8 @@ import glob
 import json
 import os
 
+import platform_utils
+
 
 def _summarize(path):
     event_counts = {}
@@ -31,7 +33,9 @@ def _summarize(path):
     }
 
 
-def list_log_runs(log_dir="logs"):
+def list_log_runs(log_dir=None):
+    if log_dir is None:
+        log_dir = os.path.join(platform_utils.data_dir(), "logs")  # same default as event_log.init()
     if not os.path.isdir(log_dir):
         return []
     runs = [_summarize(p) for p in glob.glob(os.path.join(log_dir, "run_*.jsonl"))]

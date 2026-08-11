@@ -11,16 +11,18 @@ underneath invisible and selection impossible. A static screenshot
 backdrop sidesteps that dependency entirely: it's just a normal opaque
 image, no compositing involved.
 
-The backdrop itself comes from portal_capture.capture_via_portal(), not
-Qt's own QScreen.grabWindow(0) - confirmed live on a real GNOME/Wayland
-session that grabWindow(0) does not return real screen content there
-(empty/placeholder pixmap), while the portal does."""
+The backdrop itself comes from ocr_capture.capture_fullscreen() - mss
+first (works natively on Windows, no compositor/portal involved at all
+there), falling back to the XDG portal only on Linux. Not Qt's own
+QScreen.grabWindow(0) - confirmed live on a real GNOME/Wayland session
+that grabWindow(0) does not return real screen content there (empty/
+placeholder pixmap), while the portal does."""
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import QWidget
 
 import profile_lookup_settings
-from portal_capture import capture_via_portal
+from ocr_capture import capture_fullscreen
 
 
 def _pil_to_qpixmap(img):
@@ -46,7 +48,7 @@ class RegionCalibrator(QWidget):
 
         # Grabbed BEFORE showFullScreen() so this window itself isn't in
         # the shot.
-        self._backdrop = _pil_to_qpixmap(capture_via_portal())
+        self._backdrop = _pil_to_qpixmap(capture_fullscreen())
 
         self.showFullScreen()
 

@@ -2,6 +2,7 @@
 launch, per overlay entry) and a Logs page (browse past diagnostic runs).
 Same dark-gradient visual style as the overlay itself."""
 import os
+import sys
 
 # Forces Qt's X11 (XWayland) backend instead of native Wayland - set
 # BEFORE any PyQt import triggers platform-plugin selection (that happens
@@ -18,10 +19,12 @@ import os
 # but forcing this one app to xcb gets the same effect automatically).
 # setdefault, not a plain assignment - lets an explicit override (e.g. the
 # offscreen-platform test harness used throughout this project) win.
-os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+# Linux-only: "xcb" isn't a platform Qt even ships on Windows/macOS - this
+# would crash the app on startup there ("could not load the Qt platform
+# plugin xcb") if set unconditionally.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
-import subprocess
-import sys
 from datetime import datetime
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt
@@ -56,6 +59,7 @@ import hotkey_settings
 import mod_language_settings
 import mod_manager
 import overlay_position_settings
+import platform_utils
 import profile_lookup_history
 from launcher_checks import (
     LAST_MATCH_CHECKS, PROFILE_LOOKUP_CHECKS, SELF_STATS_CHECKS,
@@ -105,7 +109,6 @@ class _StatusDot(QWidget):
 def _status_dot(status):
     return _StatusDot(status)
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Data-driven so a second overlay is one more entry, no structural change.
 # Личная статистика shares entry_script="app.py" with Драфт-статы - it's
@@ -446,7 +449,7 @@ class _LogsPage(QWidget):
         self._detail.setText("\n".join(lines))
 
     def _open_folder(self):
-        subprocess.Popen(["xdg-open", os.path.join(PROJECT_DIR, "logs")])
+        platform_utils.open_path(os.path.join(platform_utils.data_dir(), "logs"))
 
     def _copy_path(self):
         row = self._list.currentRow()
@@ -906,7 +909,7 @@ class LauncherWindow(QWidget):
         self.hide()
 
     def _setup_tray_icon(self):
-        self._tray_icon = QSystemTrayIcon(QIcon(os.path.join(PROJECT_DIR, "icon.png")), self)
+        self._tray_icon = QSystemTrayIcon(QIcon(platform_utils.resource_path("icon.png")), self)
         tray_menu = QMenu()
         show_action = tray_menu.addAction("Открыть хаб")
         show_action.triggered.connect(self._show_from_tray)
@@ -970,7 +973,7 @@ if __name__ == "__main__":
     # taskbar/dock can look up that entry's Icon= instead of falling back to
     # a generic icon when it can't otherwise correlate the window to it.
     app.setDesktopFileName("dota-overlay-hub")
-    app.setWindowIcon(QIcon(os.path.join(PROJECT_DIR, "icon.png")))
+    app.setWindowIcon(QIcon(platform_utils.resource_path("icon.png")))
     # This is now a tray-resident app - closing/hiding every window must not
     # exit the process; only the tray menu's "Выйти" (or Ctrl+C) should.
     app.setQuitOnLastWindowClosed(False)

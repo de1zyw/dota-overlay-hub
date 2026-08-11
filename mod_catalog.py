@@ -13,7 +13,9 @@ import time
 
 import requests
 
-CACHE_DIR = os.path.join(os.path.dirname(__file__), ".mod_catalog_cache")
+import platform_utils
+
+CACHE_DIR = os.path.join(platform_utils.data_dir(), ".mod_catalog_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 REPO_BASE = "https://raw.githubusercontent.com/h6rd/Dota2PornFxWeb/main"

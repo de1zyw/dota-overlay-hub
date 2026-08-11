@@ -14,9 +14,11 @@ load() never raises; save() rejects anything that isn't a safe folder-
 name component."""
 import json
 import os
+
+import platform_utils
 import re
 
-SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mod_language_settings.json")
+SETTINGS_PATH = os.path.join(platform_utils.data_dir(), "mod_language_settings.json")
 
 DEFAULT_LANGUAGE = "russian"
 # Dota's real, Steam-installed language folders - confirmed against an

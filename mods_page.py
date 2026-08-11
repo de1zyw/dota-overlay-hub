@@ -15,7 +15,6 @@ _ModsPage._selected, keyed by (category_id, mod_name), independent of any
 one _ModCard's lifetime since the grid is rebuilt on every category/search
 change)."""
 import os
-import subprocess
 
 from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtGui import QMovie, QPixmap
@@ -29,6 +28,7 @@ import category_icons
 import mod_catalog
 import mod_language_settings
 import mod_manager
+import platform_utils
 from cart_dialog import CartDialog
 from tools_panel import _ToolsPanel
 from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE
@@ -931,7 +931,7 @@ class _ModsPage(QWidget):
     def _open_mods_folder(self):
         mods_dir = mod_manager.get_mods_dir()
         os.makedirs(mods_dir, exist_ok=True)
-        subprocess.Popen(["xdg-open", mods_dir])
+        platform_utils.open_path(mods_dir)
 
     def _refresh_cart_buttons(self):
         count = len(self._selected)

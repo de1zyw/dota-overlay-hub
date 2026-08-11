@@ -7,7 +7,9 @@ didn't persist."""
 import json
 import os
 
-SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profile_lookup_settings.json")
+import platform_utils
+
+SETTINGS_PATH = os.path.join(platform_utils.data_dir(), "profile_lookup_settings.json")
 
 
 def load():

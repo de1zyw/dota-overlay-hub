@@ -24,8 +24,9 @@ Two tiers:
 import os
 
 import assets
+import platform_utils
 
-_BUNDLED_ICON_DIR = os.path.join(os.path.dirname(__file__), "assets", "category_icons")
+_BUNDLED_ICON_DIR = platform_utils.resource_path("assets", "category_icons")
 
 
 def _bundled(filename):

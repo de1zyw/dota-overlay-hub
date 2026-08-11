@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 
 import mod_manager
 import mod_tools
+import platform_utils
 from ui_common import PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE, Worker
 
 _MEDIA_FILTER = (
@@ -68,7 +69,18 @@ class _ToolsPanel(QFrame):
         bg_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
         bg_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         bg_btn.clicked.connect(self._on_background)
+        # The real Windows build of this tool (Changer.exe) is a GUI app
+        # with no CLI to automate - greyed out upfront (and kept that way
+        # through every _set_busy() re-enable, see there) rather than only
+        # failing after a click, so it doesn't look broken/flaky.
+        self._bg_available = not platform_utils.IS_WINDOWS
+        if not self._bg_available:
+            bg_btn.setEnabled(False)
+            bg_btn.setToolTip(
+                "На Windows это отдельная GUI-программа — скачай Changer.exe с сайта каталога"
+            )
         row.addWidget(bg_btn)
+        self._bg_btn = bg_btn
 
         row.addStretch()
         outer.addLayout(row)
@@ -84,6 +96,8 @@ class _ToolsPanel(QFrame):
 
     def _set_busy(self, busy, message=""):
         for btn in self._buttons:
+            if btn is self._bg_btn and not self._bg_available:
+                continue  # permanently disabled on this platform, not a busy-state toggle
             btn.setEnabled(not busy)
         if message:
             self._status_label.setText(message)

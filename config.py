@@ -8,12 +8,14 @@ from steam_library import find_dota_library
 # installed, not necessarily where Steam itself lives (e.g. Steam on an
 # HDD, games on a separate SSD library folder) - see steam_library.py.
 STEAM_LIBRARY = find_dota_library()
-SERVER_LOG_PATH = os.path.join(
-    STEAM_LIBRARY, "steamapps/common/dota 2 beta/game/dota/server_log.txt"
-)
-GSI_CFG_DIR = os.path.join(
-    STEAM_LIBRARY, "steamapps/common/dota 2 beta/game/dota/cfg/gamestate_integration"
-)
+# Segment-by-segment os.path.join, not a single "a/b/c" string - the
+# latter bakes in forward slashes, which Windows tolerates in most APIs
+# but not universally (e.g. some subprocess/shell-out paths want native
+# backslashes) - joining per-segment always produces the right separator
+# for whatever OS this actually runs on.
+_DOTA_GAME_DIR = os.path.join(STEAM_LIBRARY, "steamapps", "common", "dota 2 beta", "game", "dota")
+SERVER_LOG_PATH = os.path.join(_DOTA_GAME_DIR, "server_log.txt")
+GSI_CFG_DIR = os.path.join(_DOTA_GAME_DIR, "cfg", "gamestate_integration")
 
 GSI_HOST = "127.0.0.1"
 GSI_PORT = 3500

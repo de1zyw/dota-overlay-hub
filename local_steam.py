@@ -27,23 +27,17 @@ than pulling in a PyPI VDF-parsing dependency just for this one file.
 import os
 import re
 
-from steam_library import _STEAM_ROOT_CANDIDATES
+import platform_utils
+from steam_library import _find_steam_root
 
 # Same conversion constant used in dota_stats_bot/steam_api.py (STEAM64_BASE).
 STEAM64_BASE = 76561197960265728
-
-# Steam's own config lives under its install ROOT, not under whichever
-# library folder happens to have a given game (that's a separate concept -
-# see steam_library.py) - so this reuses the same root-candidate list
-# (covers flatpak/snap too) rather than the old hardcoded 2-path list,
-# which missed ~/.steam/root and both packaged variants.
-_CANDIDATE_PATHS = tuple(f"{root}/config/loginusers.vdf" for root in _STEAM_ROOT_CANDIDATES)
 
 # Manual escape hatch, same pattern as steam_library_override.txt: if
 # auto-detection still can't find/parse loginusers.vdf, drop the account_id
 # (Steam32, not the 17-digit SteamID64) in this file, one line, no quotes.
 # Checked first, before any auto-detection.
-_OVERRIDE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_account_override.txt")
+_OVERRIDE_FILE = os.path.join(platform_utils.data_dir(), "steam_account_override.txt")
 
 # Each account entry: a 17-digit SteamID64 key followed by a brace-delimited
 # body. Bodies in this file are flat (no nested braces), so a non-nested
@@ -53,11 +47,17 @@ _MOST_RECENT_RE = re.compile(r'"MostRecent"\s*"1"', re.IGNORECASE)
 
 
 def _find_loginusers_path():
-    for candidate in _CANDIDATE_PATHS:
-        path = os.path.expanduser(candidate)
-        if os.path.isfile(path):
-            return path
-    return None
+    # Steam's own config lives under its install ROOT, not under whichever
+    # library folder happens to have a given game (that's a separate
+    # concept - see steam_library.py) - reuses that module's own root
+    # detection (cross-platform: Linux dotfile paths, or the Windows
+    # registry/Program Files paths) rather than keeping a second,
+    # independent candidate-path list that could drift out of sync with it.
+    root = _find_steam_root()
+    if not root:
+        return None
+    path = os.path.join(root, "config", "loginusers.vdf")
+    return path if os.path.isfile(path) else None
 
 
 def get_local_account_id():

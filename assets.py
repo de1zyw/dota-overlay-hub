@@ -6,9 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
+import platform_utils
 from opendota_client import _cached_get
 
-CACHE_DIR = os.path.join(os.path.dirname(__file__), ".assets_cache")
+CACHE_DIR = os.path.join(platform_utils.data_dir(), ".assets_cache")
 # Reused across every icon download (a whole draft roster's worth of hero
 # icons at once, first time any of them is seen) - keep-alive skips a
 # fresh TCP+TLS handshake per icon.

@@ -3,9 +3,11 @@ so the hub's ИСТОРИЯ page can show past lookups without redoing OCR.
 Never raises - a corrupt/missing history file is treated as empty."""
 import json
 import os
+
+import platform_utils
 from datetime import datetime, timezone
 
-HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profile_lookup_history.json")
+HISTORY_PATH = os.path.join(platform_utils.data_dir(), "profile_lookup_history.json")
 MAX_ENTRIES = 100
 
 

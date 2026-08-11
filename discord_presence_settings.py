@@ -6,9 +6,11 @@ signup at discord.com/developers/applications, tied to their own Discord
 account) - not something this app can obtain on its own."""
 import json
 import os
+
+import platform_utils
 import re
 
-SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "discord_presence_settings.json")
+SETTINGS_PATH = os.path.join(platform_utils.data_dir(), "discord_presence_settings.json")
 
 _CLIENT_ID_RE = re.compile(r"^\d{15,25}$")  # Discord snowflake IDs are 17-19 digits currently
 

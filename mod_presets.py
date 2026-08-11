@@ -10,7 +10,9 @@ that mod changes (new preview, moved category, etc)."""
 import json
 import os
 
-PRESETS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mod_presets.json")
+import platform_utils
+
+PRESETS_PATH = os.path.join(platform_utils.data_dir(), "mod_presets.json")
 
 
 def load_all():

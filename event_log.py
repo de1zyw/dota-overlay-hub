@@ -10,12 +10,21 @@ import threading
 import traceback
 from datetime import datetime, timezone
 
+import platform_utils
+
 _lock = threading.Lock()
 _file = None
 
 
-def init(log_dir="logs"):
+def init(log_dir=None):
     global _file
+    if log_dir is None:
+        # An explicit, CWD-independent default - a relative "logs" only
+        # ever worked because `python3 launcher.py` happens to be run
+        # from this project's own directory; a frozen .exe can be
+        # launched with a different working directory (a shortcut with
+        # its own "Start in", `cmd /c cd elsewhere && app.exe`, ...).
+        log_dir = os.path.join(platform_utils.data_dir(), "logs")
     with _lock:
         if _file is not None:
             return

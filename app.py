@@ -20,15 +20,17 @@ window-touching code lives in this class's own slot methods rather than in
 a plain function or a bound method of the (non-QObject) `OverlayApp`.
 """
 import os
-
-# See the matching comment in launcher.py - forces XWayland so
-# window_position.py's move() calls actually take effect. Harmless no-op
-# when launcher.py already set this before importing this module (the
-# normal production path); only matters when this file is run directly
-# (`python3 app.py`, bypassing the hub).
-os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
-
 import sys
+
+# See the matching comment in launcher.py - forces XWayland (Linux-only,
+# "xcb" isn't a platform Qt ships on Windows/macOS and would crash the
+# app on startup there) so window_position.py's move() calls actually
+# take effect. Harmless no-op when launcher.py already set this before
+# importing this module (the normal production path); only matters when
+# this file is run directly (`python3 app.py`, bypassing the hub).
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor

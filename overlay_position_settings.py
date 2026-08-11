@@ -5,7 +5,9 @@ the change didn't persist."""
 import json
 import os
 
-SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "overlay_position_settings.json")
+import platform_utils
+
+SETTINGS_PATH = os.path.join(platform_utils.data_dir(), "overlay_position_settings.json")
 
 DEFAULT_POSITION = "top_left"
 POSITIONS = ("top_left", "top_right", "bottom_left", "bottom_right", "center")

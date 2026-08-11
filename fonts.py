@@ -7,7 +7,9 @@ import os
 
 from PyQt6.QtGui import QFont, QFontDatabase
 
-_FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "fonts")
+import platform_utils
+
+_FONTS_DIR = platform_utils.resource_path("assets", "fonts")
 _loaded = False
 
 
