@@ -988,7 +988,7 @@ def _acquire_single_instance():
     return server
 
 
-if __name__ == "__main__":
+def _run():
     app = QApplication(sys.argv)
     import fonts
     app.setFont(fonts.default_font())
@@ -1015,3 +1015,31 @@ if __name__ == "__main__":
     single_instance_server.newConnection.connect(window._on_activation_request)
     window.show()
     sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    try:
+        _run()
+    except SystemExit:
+        raise
+    except Exception:
+        # A frozen .exe's console window closes the instant the process
+        # ends, taking any unhandled traceback with it before anyone can
+        # read it - the exact same problem build.bat had before it started
+        # logging to a file. Write the crash to disk next to the exe first,
+        # then (Windows-only, frozen-only) hold the console open so the
+        # person running it - not necessarily the person who can read this
+        # code - actually sees something instead of a window that just
+        # vanishes.
+        import traceback
+        crash_path = os.path.join(platform_utils.data_dir(), "crash_log.txt")
+        try:
+            with open(crash_path, "w", encoding="utf-8") as f:
+                f.write(traceback.format_exc())
+        except OSError:
+            pass
+        print(traceback.format_exc())
+        print(f"\nOshibka zapisana v: {crash_path}")
+        if platform_utils.IS_WINDOWS and platform_utils.IS_FROZEN:
+            os.system("pause")
+        sys.exit(1)
