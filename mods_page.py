@@ -772,10 +772,12 @@ class _ModsPage(QWidget):
         os_label = QLabel("Платформа:")
         os_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
         os_bar.addWidget(os_label)
-        os_bar.addWidget(_os_toggle_button("🐧 Linux", active=True))
-        windows_btn = _os_toggle_button("🔒 Windows", active=False)
-        windows_btn.setToolTip("Скоро — заработает после установки Windows на отдельный диск")
-        os_bar.addWidget(windows_btn)
+        # Both are real, supported platforms now (cross-platform port) -
+        # this just highlights which one is actually running right now,
+        # it's not a feature toggle. Was hardcoded Linux-active/
+        # Windows-locked from before the Windows port existed.
+        os_bar.addWidget(_os_toggle_button("🐧 Linux", active=not platform_utils.IS_WINDOWS))
+        os_bar.addWidget(_os_toggle_button("🪟 Windows", active=platform_utils.IS_WINDOWS))
         os_bar.addStretch()
         layout.addLayout(os_bar)
 

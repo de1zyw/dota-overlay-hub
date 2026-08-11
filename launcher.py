@@ -821,6 +821,13 @@ class LauncherWindow(QWidget):
         sidebar_layout.addWidget(history_btn)
         sidebar_layout.addStretch()
 
+        self._update_btn = QPushButton("⬆ Доступно обновление")
+        self._update_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_btn.setVisible(False)
+        self._update_btn.clicked.connect(self._on_update_clicked)
+        sidebar_layout.addWidget(self._update_btn)
+
         panel_layout.addWidget(sidebar)
 
         content = QWidget()
@@ -870,6 +877,33 @@ class LauncherWindow(QWidget):
         self._fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
         self._setup_tray_icon()
+        self._check_for_update()
+
+    def _check_for_update(self):
+        # Only meaningful for a packaged build - check_for_update() itself
+        # already no-ops on a dev checkout (no build_version.txt), but
+        # skipping the network call entirely there avoids spamming GitHub's
+        # API on every `python3 launcher.py` during development.
+        if not platform_utils.IS_FROZEN:
+            return
+        import update_checker
+        self._update_worker = Worker(update_checker.check_for_update)
+        self._update_worker.done.connect(self._on_update_check_done)
+        self._update_worker.start()
+
+    def _on_update_check_done(self, result):
+        if result is True:
+            self._update_btn.setVisible(True)
+
+    def _on_update_clicked(self):
+        import update_checker
+        self._update_btn.setEnabled(False)
+        self._update_btn.setText("Обновляю...")
+        if update_checker.relaunch_build_and_exit():
+            QApplication.instance().quit()
+        else:
+            self._update_btn.setEnabled(True)
+            self._update_btn.setText("⬆ Не удалось - обнови вручную")
 
     def _switch_page(self, index, nav_buttons):
         self._stack.setCurrentIndex(index)
