@@ -44,9 +44,16 @@ if not exist launcher.py (
     cd dota-overlay-hub-master
 )
 
-where python >nul 2>nul
-if errorlevel 1 (
-    echo [1/5] Python ne nayden - stavlyu avtomaticheski ^(tikho, bez okon, prava administratora ne nuzhny^)...
+REM Prostoy "where python" ne goditsya - na bolshinstve Windows 10/11 v PATH
+REM po umolchaniyu est zaglushka Microsoft Store
+REM (%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe), kotoraya "nahoditsya",
+REM no nichego realno ne delaet, esli nastoyashiy Python ne postavlen. Proveryaem
+REM realnym zapuskom "python --version" i tem, chto otvet pohozh na versiyu.
+set "PY_OK="
+for /f "delims=" %%V in ('python --version 2^>^&1') do set "PY_LINE=%%V"
+echo !PY_LINE! | findstr /r /c:"^Python 3\.[0-9]" >nul && set "PY_OK=1"
+if not defined PY_OK (
+    echo [1/5] Python ne nayden ^(ili eto pustaya zaglushka Microsoft Store^) - stavlyu nastoyashiy avtomaticheski ^(tikho, bez okon, prava administratora ne nuzhny^)...
     set "PY_URL=https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
     set "PY_INSTALLER=python-installer.exe"
     set "DL_FAIL="
