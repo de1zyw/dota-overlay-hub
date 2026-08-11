@@ -47,11 +47,13 @@ if not exist launcher.py (
 REM Prostoy "where python" ne goditsya - na bolshinstve Windows 10/11 v PATH
 REM po umolchaniyu est zaglushka Microsoft Store
 REM (%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe), kotoraya "nahoditsya",
-REM no nichego realno ne delaet, esli nastoyashiy Python ne postavlen. Proveryaem
-REM realnym zapuskom "python --version" i tem, chto otvet pohozh na versiyu.
+REM no nichego realno ne delaet, esli nastoyashiy Python ne postavlen. Tekst
+REM oshibki etoy zaglushki mozhet otlichatsya na raznyh Windows, poetomu ne
+REM parsim tekst "--version" - prosto prosim Python realno vypolnit kod i
+REM sverяем tochnoe chislo na vyhode. Esli eto ne nastoyashiy Python - takogo
+REM chisla prosto ne budet.
 set "PY_OK="
-for /f "delims=" %%V in ('python --version 2^>^&1') do set "PY_LINE=%%V"
-echo !PY_LINE! | findstr /r /c:"^Python 3\.[0-9]" >nul && set "PY_OK=1"
+for /f "delims=" %%V in ('python -c "print(offline_check_31337)" 2^>nul') do if "%%V"=="31337" set "PY_OK=1"
 if not defined PY_OK (
     echo [1/5] Python ne nayden ^(ili eto pustaya zaglushka Microsoft Store^) - stavlyu nastoyashiy avtomaticheski ^(tikho, bez okon, prava administratora ne nuzhny^)...
     set "PY_URL=https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
