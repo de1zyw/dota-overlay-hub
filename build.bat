@@ -24,13 +24,13 @@ if not "%~1"=="~inner~" (
     call "%~f0" ~inner~ > "%~dp0build_log.txt" 2>&1
     set "RESULT=!errorlevel!"
     echo.
-    echo --------------- log sborki (build_log.txt) ---------------
+    echo --------------- log sborki ^(build_log.txt^) ---------------
     type "%~dp0build_log.txt"
     echo ------------------------------------------------------------
     echo.
     if "!RESULT!"=="0" (
         echo ===============================================
-        echo   Gotovo! "Dota Overlay Hub.exe" dolzhen lezhat
+        echo   Gotovo. "Dota Overlay Hub.exe" dolzhen lezhat
         echo   ryadom s etim skriptom.
         echo.
         echo   VAZHNO: Windows Defender/SmartScreen mozhet
