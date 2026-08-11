@@ -852,8 +852,12 @@ class LauncherWindow(QWidget):
         sidebar_layout.addWidget(history_btn)
         sidebar_layout.addStretch()
 
-        self._update_btn = QPushButton("⬆ Доступно обновление")
-        self._update_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._update_btn = QPushButton("⬆ Обновить")
+        # Sidebar is a fixed 160px - PRIMARY_BUTTON_STYLE's 16px horizontal
+        # padding left no room for real text there, clipping it. Same style,
+        # tighter padding, short label instead.
+        self._update_btn.setStyleSheet(PRIMARY_BUTTON_STYLE.replace("padding: 8px 16px;", "padding: 8px 4px;"))
+        self._update_btn.setToolTip("Доступна новая версия — нажми, чтобы пересобрать")
         self._update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._update_btn.setVisible(False)
         self._update_btn.clicked.connect(self._on_update_clicked)
@@ -934,7 +938,8 @@ class LauncherWindow(QWidget):
             QApplication.instance().quit()
         else:
             self._update_btn.setEnabled(True)
-            self._update_btn.setText("⬆ Не удалось - обнови вручную")
+            self._update_btn.setText("⬆ Не удалось")
+            self._update_btn.setToolTip("Не нашёл build.bat рядом — обнови вручную")
 
     def _switch_page(self, index, nav_buttons):
         self._stack.setCurrentIndex(index)
