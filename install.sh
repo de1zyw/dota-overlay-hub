@@ -7,6 +7,29 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 
+# Самозагрузка: если этого файла нет рядом с launcher.py (скрипт отправили
+# отдельно), скачиваем весь проект. GitHub недоступен без VPN для части
+# пользователей в России - пробуем его первым (у большинства он работает),
+# и только при неудаче переключаемся на зеркало (self-hosted Gitea за
+# Cloudflare Tunnel, отдаёт тот же самый код без VPN).
+if [ ! -f "$PROJECT_DIR/launcher.py" ]; then
+    echo "== Проекта рядом нет - скачиваю =="
+    if curl -fsSL --max-time 8 -o /tmp/dota-overlay-hub.zip \
+        https://github.com/de1zyw/dota-overlay-hub/archive/refs/heads/master.zip 2>/dev/null; then
+        echo "Скачано с GitHub."
+    elif curl -fsSL --max-time 15 -o /tmp/dota-overlay-hub.zip \
+        https://sort-kinds-outcomes-premiere.trycloudflare.com/piuser/dota-overlay-hub/archive/master.zip 2>/dev/null; then
+        echo "GitHub недоступен - скачано с зеркала (без VPN)."
+    else
+        echo "ОШИБКА: не удалось скачать проект ни с GitHub, ни с зеркала."
+        exit 1
+    fi
+    unzip -q /tmp/dota-overlay-hub.zip -d /tmp/dota-overlay-hub-extracted
+    EXTRACTED_DIR="$(find /tmp/dota-overlay-hub-extracted -maxdepth 1 -mindepth 1 -type d | head -1)"
+    cp -r "$EXTRACTED_DIR"/. "$PROJECT_DIR/"
+    rm -rf /tmp/dota-overlay-hub.zip /tmp/dota-overlay-hub-extracted
+fi
+
 echo "== Устанавливаю Python-зависимости =="
 pip install -r requirements.txt --break-system-packages
 
