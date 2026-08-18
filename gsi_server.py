@@ -15,10 +15,23 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import event_log
 
+# GSI payloads are a few KB at most even with verbose state - this is just a
+# sanity cap against a stuck/malicious local sender holding the single
+# request thread open on an oversized body.
+_MAX_PAYLOAD_BYTES = 5_000_000
+
 
 class _Handler(BaseHTTPRequestHandler):
+    # Bounds the per-connection socket read/write, so a slow local sender
+    # can't hold the single request thread open indefinitely.
+    timeout = 10
+
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
+        if length > _MAX_PAYLOAD_BYTES:
+            self.send_response(413)
+            self.end_headers()
+            return
         body = self.rfile.read(length)
         try:
             data = json.loads(body)

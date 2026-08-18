@@ -39,14 +39,21 @@ _session = requests.Session()
 # inspecting both zips, not assumed. There is no command-line workflow to
 # automate on Windows, so create_background() is Linux-only by design,
 # not an oversight - see its own docstring.
+# Pinned to a specific known-good tag (checked by hand: v3.5 / v2.3) rather
+# than "latest" - "latest" means a future compromised release on either
+# upstream repo would get silently downloaded and executed on the next
+# Pack/Unpack/Merge click, with no gate at all. Bump these by hand after
+# checking a new release, not automatically.
+_VPKTOOL_TAG = "v3.5"
+_VPKMERGE_TAG = "v2.3"
 if platform_utils.IS_WINDOWS:
-    _VPKTOOL_URL = "https://github.com/h6rd/VPKTool/releases/latest/download/VPKTool-Win.zip"
-    _VPKMERGE_URL = "https://github.com/h6rd/VPKMerge/releases/latest/download/VPKMerge-Win.zip"
+    _VPKTOOL_URL = f"https://github.com/h6rd/VPKTool/releases/download/{_VPKTOOL_TAG}/VPKTool-Win.zip"
+    _VPKMERGE_URL = f"https://github.com/h6rd/VPKMerge/releases/download/{_VPKMERGE_TAG}/VPKMerge-Win.zip"
     _VPKTOOL_BIN_NAME = "VPKTool.exe"
     _VPKMERGE_BIN_NAME = "VPKMerge.exe"
 else:
-    _VPKTOOL_URL = "https://github.com/h6rd/VPKTool/releases/latest/download/VPKTool-Linux.zip"
-    _VPKMERGE_URL = "https://github.com/h6rd/VPKMerge/releases/latest/download/VPKMerge-Linux.zip"
+    _VPKTOOL_URL = f"https://github.com/h6rd/VPKTool/releases/download/{_VPKTOOL_TAG}/VPKTool-Linux.zip"
+    _VPKMERGE_URL = f"https://github.com/h6rd/VPKMerge/releases/download/{_VPKMERGE_TAG}/VPKMerge-Linux.zip"
     _VPKTOOL_BIN_NAME = "VPKTool"
     _VPKMERGE_BIN_NAME = "VPKMerge"
 _BACKGROUND_CHANGER_URL = (

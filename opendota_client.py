@@ -39,6 +39,7 @@ _cache_lock = threading.Lock()
 # broken or the player's privacy settings were the cause.
 _stats_fallback_cache = {}
 _stats_fallback_lock = threading.Lock()
+_STATS_FALLBACK_MAX = 200
 # Shared connection pool - plain requests.get() opens a fresh TCP+TLS
 # connection per call; reusing a Session lets keep-alive skip that
 # handshake on every request after the first to the same host, which
@@ -143,6 +144,14 @@ def _cached_get(endpoint, params=None, ttl=30):
     data = _get(endpoint, params)
     with _cache_lock:
         _cache[key] = (time.time() + ttl, data)
+        # A key looked up once (e.g. a one-off account_id) and never again
+        # would otherwise sit here forever - nothing ever purged expired
+        # entries. Sweep on write instead of a separate timer thread, since
+        # writes already happen roughly as often as new keys are added.
+        now = time.time()
+        expired = [k for k, (exp, _) in _cache.items() if exp <= now]
+        for k in expired:
+            del _cache[k]
     return data
 
 
@@ -355,4 +364,12 @@ def fetch_player_stats(account_id):
         # later by this cache pretending it once had stats.
         with _stats_fallback_lock:
             _stats_fallback_cache[account_id] = (time.time(), stats)
+            # Unlike _cache above this is meant to live indefinitely (it's
+            # the outage fallback), so a TTL sweep doesn't apply - cap the
+            # count instead and drop the oldest once a long session has
+            # looked up more distinct players than any one draft/lobby
+            # would realistically ever contain.
+            if len(_stats_fallback_cache) > _STATS_FALLBACK_MAX:
+                oldest_id = min(_stats_fallback_cache, key=lambda k: _stats_fallback_cache[k][0])
+                del _stats_fallback_cache[oldest_id]
     return stats
