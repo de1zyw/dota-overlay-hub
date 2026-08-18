@@ -1,0 +1,73 @@
+name: Build Windows installer
+
+# Fires when a GitHub Release is published - builds the PyInstaller exe and
+# wraps it in an Inno Setup installer on a real Windows runner, then
+# attaches the installer to that same release. Replaces having each user
+# self-build via build.bat: one shared, reproducible build means no more
+# per-machine PyInstaller-hash-triggers-Defender false positives, and
+# friends never need Python/pip/a compiler on their own machine at all.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp the installer with (e.g. v1.0.3)"
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "version=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Write build_version.txt
+        shell: bash
+        run: echo -n "${{ steps.ver.outputs.version }}" > build_version.txt
+
+      - name: Build exe with PyInstaller
+        run: >
+          python -m PyInstaller --noconfirm --onefile
+          --name "Dota Overlay Hub"
+          --icon icon.ico
+          --add-data "assets;assets"
+          --add-data "icon.png;."
+          --add-data "gamestate_integration_dota_overlay.cfg;."
+          --add-data "build_version.txt;."
+          launcher.py
+
+      - name: Compile Inno Setup installer
+        shell: cmd
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.ver.outputs.version }} installer.iss
+
+      - name: Upload installer to the release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'release'
+        with:
+          files: installer_output/DotaOverlayHub-Setup-*.exe
+
+      - name: Upload installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DotaOverlayHub-Setup-${{ steps.ver.outputs.version }}
+          path: installer_output/DotaOverlayHub-Setup-*.exe
