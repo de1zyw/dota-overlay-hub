@@ -110,7 +110,7 @@ class _BatchInstallWorker(QThread):
     background thread - sequential on purpose: mod_manager's manifest file
     is a plain read-modify-write JSON file, not safe for concurrent
     installs to touch at once."""
-    progress = pyqtSignal(int, int, str, bool)  # done_count, total, mod_name, ok
+    progress = pyqtSignal(int, int, str, bool, str)  # done_count, total, mod_name, ok, message
     finished_all = pyqtSignal()
 
     def __init__(self, jobs, parent=None):
@@ -125,10 +125,10 @@ class _BatchInstallWorker(QThread):
                     mod_manager.install_loose_mod if mod_manager.is_loose_file_category(category_id)
                     else mod_manager.install_mod
                 )
-                ok, _message = installer(category_id, mod)
-            except Exception:  # noqa: BLE001 - one bad mod shouldn't kill the queue
-                ok = False
-            self.progress.emit(i, total, mod["name"], ok)
+                ok, message = installer(category_id, mod)
+            except Exception as e:  # noqa: BLE001 - one bad mod shouldn't kill the queue
+                ok, message = False, f"{type(e).__name__}: {e}"
+            self.progress.emit(i, total, mod["name"], ok, message)
         self.finished_all.emit()
 
 
@@ -479,11 +479,16 @@ class CartDialog(QDialog):
         self._batch_worker.finished_all.connect(self._on_install_finished)
         self._batch_worker.start()
 
-    def _on_progress(self, done, total, mod_name, ok):
+    def _on_progress(self, done, total, mod_name, ok, message):
         if ok:
             self._add_log_row("✅", f'Установлен <b style="color:#a3e6a3;">{mod_name}</b>')
         else:
-            self._add_log_row("❌", f'Не удалось: <b style="color:#e2574c;">{mod_name}</b>')
+            # message is install_mod's own (ok, message) reason - was
+            # discarded before (only True/False reached this UI), so a
+            # real failure like the pak10-99 slot limit looked identical
+            # to "just didn't download" with zero indication why.
+            reason = f" — {message}" if message else ""
+            self._add_log_row("❌", f'Не удалось: <b style="color:#e2574c;">{mod_name}</b>{reason}')
         self._progress_bar.set_progress(done, total)
         self._progress_status_label.setText(f"Обрабатываю {done}/{total} мод(ов)...")
 

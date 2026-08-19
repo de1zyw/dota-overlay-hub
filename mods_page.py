@@ -206,8 +206,14 @@ class _ModCard(QFrame):
 
     def _refresh_button_state(self):
         installed = mod_manager.is_installed(self._category_id, self._mod["name"])
-        self._action_btn.setText("Удалить" if installed else "Установить")
-        self._action_btn.setStyleSheet(SECONDARY_BUTTON_STYLE if installed else PRIMARY_BUTTON_STYLE)
+        # Direct one-off install removed - the cart's batch flow is the only
+        # install path now (it's had real bugs surface less there, and one
+        # install path is simpler than two doing almost the same thing).
+        # Uninstall isn't something the cart does at all, so that half of
+        # this button stays.
+        self._action_btn.setVisible(installed)
+        self._action_btn.setText("Удалить")
+        self._action_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
         if self._checkbox is None:
             return
         # No point queueing an already-installed mod for the batch button -
@@ -260,15 +266,13 @@ class _ModCard(QFrame):
         self._apply_preview_scale()
 
     def _on_action_clicked(self):
+        # Uninstall-only now - see _refresh_button_state, this button is
+        # hidden whenever the mod isn't installed, so there's nothing else
+        # this click could mean.
         self._action_btn.setEnabled(False)
-        installed = mod_manager.is_installed(self._category_id, self._mod["name"])
         loose = mod_manager.is_loose_file_category(self._category_id)
-        if installed:
-            uninstaller = mod_manager.uninstall_loose_mod if loose else mod_manager.uninstall_mod
-            fn = lambda: uninstaller(self._category_id, self._mod["name"])
-        else:
-            installer = mod_manager.install_loose_mod if loose else mod_manager.install_mod
-            fn = lambda: installer(self._category_id, self._mod)
+        uninstaller = mod_manager.uninstall_loose_mod if loose else mod_manager.uninstall_mod
+        fn = lambda: uninstaller(self._category_id, self._mod["name"])
         self._action_worker = _Worker(fn)
         self._action_worker.done.connect(self._on_action_done)
         self._action_worker.start()
@@ -281,10 +285,6 @@ class _ModCard(QFrame):
         ok, message = result
         self._status_label.setText(message)
         self._refresh_button_state()
-        if ok:
-            # Was checked-and-installed individually while still queued for
-            # the batch button elsewhere - drop it from the queue too.
-            self._on_toggle(self._category_id, self._mod, False)
 
 
 def _os_toggle_button(text, active):
