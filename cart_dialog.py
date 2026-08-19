@@ -132,6 +132,107 @@ class _BatchInstallWorker(QThread):
         self.finished_all.emit()
 
 
+# Above this many mods in one cart, offer to merge the pak-addon ones into
+# one combined .vpk via VPKMerge instead of one pak-slot per mod - Dota's
+# own pakNN naming only has 90 slots (pak10-pak99) total, shared by every
+# mod ever installed, so a big enough single cart run can burn through a
+# large chunk of that budget on its own. Merging trades that away for
+# losing individual uninstall of any one mod in the merged bundle - real
+# tradeoff, so this only happens if the user opts in (see _on_install).
+MERGE_SUGGEST_THRESHOLD = 10
+
+
+class _MergeInstallWorker(QThread):
+    """Alternative to _BatchInstallWorker for a large cart the user opted
+    to merge: pak-addon mods (is_loose_file_category() == False) are
+    downloaded via mod_manager.fetch_mod_vpk_blobs(), staged to temp .vpk
+    files, and combined into one pak group via mod_tools.merge_vpks() +
+    mod_manager.install_from_files() - one pak-slot group instead of one
+    (or more) per mod. Map-replacement/loose-file mods can't be merged
+    this way (fixed single-slot install, see mod_manager.install_mod's own
+    map_blob handling) and still install individually, same as
+    _BatchInstallWorker."""
+    progress = pyqtSignal(int, int, str, bool, str)
+    finished_all = pyqtSignal()
+
+    def __init__(self, jobs, parent=None):
+        super().__init__(parent)
+        self._jobs = jobs
+
+    def run(self):
+        import shutil
+        import tempfile
+
+        import mod_tools
+
+        mergeable = [(c, m) for c, m in self._jobs if not mod_manager.is_loose_file_category(c)]
+        loose = [(c, m) for c, m in self._jobs if mod_manager.is_loose_file_category(c)]
+        total = len(self._jobs)
+        done = 0
+
+        staged_paths = []
+        staged_names = []
+        with tempfile.TemporaryDirectory(prefix="cart-merge-") as staging:
+            for category_id, mod in mergeable:
+                done += 1
+                try:
+                    ok, map_blob, vpk_blobs, message = mod_manager.fetch_mod_vpk_blobs(category_id, mod)
+                except Exception as e:  # noqa: BLE001 - one bad mod shouldn't kill the batch
+                    ok, message = False, f"{type(e).__name__}: {e}"
+                if not ok:
+                    self.progress.emit(done, total, mod["name"], False, message)
+                    continue
+                if map_blob is not None:
+                    # Shouldn't normally happen (map mods live in
+                    # LOOSE_FILE_CATEGORIES, filtered into `loose` above),
+                    # but a catalog entry could be miscategorized - fail
+                    # this one item rather than silently drop the map data.
+                    self.progress.emit(done, total, mod["name"], False, "Карта не может быть объединена с другими")
+                    continue
+                for j, blob in enumerate(vpk_blobs):
+                    path = os.path.join(staging, f"cart{done}_{j}_{mod['name'][:20]}.vpk")
+                    with open(path, "wb") as f:
+                        f.write(blob)
+                    staged_paths.append(path)
+                staged_names.append(mod["name"])
+                self.progress.emit(done, total, mod["name"], True, "Скачан, готов к объединению")
+
+            if len(staged_paths) >= 2:
+                try:
+                    merge_output = os.path.join(staging, "merged_out")
+                    # merge_vpks already returns full absolute paths inside
+                    # merge_output (it moves the files there itself) - no
+                    # further joining needed.
+                    merged_paths = mod_tools.merge_vpks(staged_paths, merge_output)
+                    bundle_name = f"Объединено: {', '.join(staged_names[:3])}" + (
+                        f" и ещё {len(staged_names) - 3}" if len(staged_names) > 3 else ""
+                    )
+                    ok, message = mod_manager.install_from_files("merged", bundle_name, merged_paths)
+                except Exception as e:  # noqa: BLE001 - report, don't crash the worker
+                    ok, message = False, f"Объединение не удалось: {type(e).__name__}: {e}"
+                self.progress.emit(total, total, bundle_name if ok else "объединённый пак", ok, message)
+            elif staged_paths:
+                # Only one mod actually had a downloadable .vpk (rest
+                # failed/were maps) - nothing left to merge, install that
+                # lone one normally instead of erroring out for no reason.
+                category_id, mod = next(cm for cm in mergeable if cm[1]["name"] == staged_names[0])
+                try:
+                    ok, message = mod_manager.install_mod(category_id, mod)
+                except Exception as e:  # noqa: BLE001
+                    ok, message = False, f"{type(e).__name__}: {e}"
+                self.progress.emit(total, total, mod["name"], ok, message)
+
+        for category_id, mod in loose:
+            done += 1
+            try:
+                ok, message = mod_manager.install_loose_mod(category_id, mod)
+            except Exception as e:  # noqa: BLE001
+                ok, message = False, f"{type(e).__name__}: {e}"
+            self.progress.emit(done, total, mod["name"], ok, message)
+
+        self.finished_all.emit()
+
+
 class _CartItemRow(QFrame):
     def __init__(self, category_id, mod, on_remove):
         super().__init__()
@@ -466,15 +567,34 @@ class CartDialog(QDialog):
         jobs = list(self._selected.items())
         if not jobs:
             return
+        job_pairs = [(cat, mod) for (cat, _name), mod in jobs]
+
+        use_merge = False
+        if len(job_pairs) >= MERGE_SUGGEST_THRESHOLD:
+            choice = QMessageBox.question(
+                self, "Объединить в один файл?",
+                f"В корзине {len(job_pairs)} модов - каждый обычно занимает свой pak-слот "
+                "(их всего 90, pak10-pak99, на ВСЕ установленные моды сразу). Можно вместо "
+                "этого объединить их в один файл через VPKMerge - займёт заметно меньше "
+                "слотов, но объединённые моды потом придётся удалять все разом, не по "
+                "отдельности. Объединить?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            use_merge = choice == QMessageBox.StandardButton.Yes
+
         self._install_btn.setEnabled(False)
         self._clear_log()
         self._progress_panel.show()
-        self._progress_bar.set_progress(0, len(jobs))
+        self._progress_bar.set_progress(0, len(job_pairs))
         self._progress_bar.set_active(True)
-        self._progress_status_label.setText(f"Обрабатываю 0/{len(jobs)} мод(ов)...")
+        self._progress_status_label.setText(f"Обрабатываю 0/{len(job_pairs)} мод(ов)...")
         self._add_log_row("🚀", "Начинаю установку...")
-        self._add_log_row("📦", f"В очереди: <b>{len(jobs)}</b> мод(ов)")
-        self._batch_worker = _BatchInstallWorker([(cat, mod) for (cat, _name), mod in jobs])
+        self._add_log_row("📦", f"В очереди: <b>{len(job_pairs)}</b> мод(ов)")
+        if use_merge:
+            self._add_log_row("🔗", "Объединяю через VPKMerge...")
+            self._batch_worker = _MergeInstallWorker(job_pairs)
+        else:
+            self._batch_worker = _BatchInstallWorker(job_pairs)
         self._batch_worker.progress.connect(self._on_progress)
         self._batch_worker.finished_all.connect(self._on_install_finished)
         self._batch_worker.start()

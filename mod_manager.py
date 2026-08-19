@@ -222,26 +222,22 @@ def _safe_remove(path):
         pass
 
 
-def install_mod(category_id, mod):
-    """Downloads mod["file"] (a .vpk, or a .zip containing one/more .vpk),
-    writes it into MODS_DIR under a manifest-tracked, collision-free
-    pakNN_dir.vpk name. Returns (ok, message)."""
-    if is_installed(category_id, mod["name"]):
-        return True, "Уже установлен"
-    if not dota_found():
-        return False, "Папка Dota 2 не найдена"
-
+def fetch_mod_vpk_blobs(category_id, mod):
+    """Download + unzip step of install_mod, pulled out on its own so the
+    cart's merge-into-one-pak path (cart_dialog.py, mods above the "ask to
+    merge" threshold) can get raw .vpk bytes for several mods before
+    deciding how to write any of them to disk - install_mod itself still
+    does download+write as one step for the normal (non-merge) path.
+    Returns (ok, map_blob_or_None, vpk_blobs, message)."""
     url = mod_catalog.get_download_url(category_id, mod.get("file"))
     if not url:
-        return False, "У этого мода нет файла для скачивания"
+        return False, None, [], "У этого мода нет файла для скачивания"
 
     try:
         resp = _session.get(url, timeout=60)
         resp.raise_for_status()
     except requests.exceptions.RequestException as exc:
-        return False, f"Ошибка скачивания: {exc}"
-
-    mods_dir = get_mods_dir()
+        return False, None, [], f"Ошибка скачивания: {exc}"
 
     # Terrain/map replacements ship as maps/dota.vpk inside the zip - NOT
     # a pakNN addon. Confirmed via the catalog's own install guide: it
@@ -262,9 +258,26 @@ def install_mod(category_id, mod):
                     elif lname.endswith(".vpk"):
                         vpk_blobs.append(zf.read(name))
         except zipfile.BadZipFile:
-            return False, "Повреждённый архив мода"
+            return False, None, [], "Повреждённый архив мода"
     else:
         vpk_blobs.append(resp.content)
+    return True, map_blob, vpk_blobs, ""
+
+
+def install_mod(category_id, mod):
+    """Downloads mod["file"] (a .vpk, or a .zip containing one/more .vpk),
+    writes it into MODS_DIR under a manifest-tracked, collision-free
+    pakNN_dir.vpk name. Returns (ok, message)."""
+    if is_installed(category_id, mod["name"]):
+        return True, "Уже установлен"
+    if not dota_found():
+        return False, "Папка Dota 2 не найдена"
+
+    ok, map_blob, vpk_blobs, message = fetch_mod_vpk_blobs(category_id, mod)
+    if not ok:
+        return False, message
+
+    mods_dir = get_mods_dir()
 
     if map_blob is not None:
         map_dest_dir = os.path.join(mods_dir, "maps")
