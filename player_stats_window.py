@@ -36,6 +36,21 @@ _BENCHMARK_LABELS = [
     ("hero_healing_per_min", "Лечение/мин"),
 ]
 
+# Rough, widely-known pub/competitive "good by" timings (seconds) for a
+# handful of common power-spike items - NOT a real per-hero/bracket average
+# (OpenDota has no ready endpoint for that; a live SQL aggregate over their
+# whole match history is too slow/rate-limit-risky to run per hotkey press,
+# see project notes 2026-08-19). Deliberately a short, conservative list -
+# only flag items where "late" is fairly uncontroversial regardless of
+# hero, skip anything too build-dependent to have one honest threshold.
+_ITEM_LATE_THRESHOLD_SECONDS = {
+    "blink": 600,             # 10:00
+    "black_king_bar": 1200,   # 20:00
+    "travel_boots": 900,      # 15:00
+    "travel_boots_2": 1080,   # 18:00
+    "radiance": 1080,         # 18:00
+}
+
 # stats.hidden with a given error_reason means "OpenDota itself is the
 # problem right now", not "this profile is actually private" - shown as a
 # distinct message so the user knows to just wait/retry rather than assume
@@ -297,9 +312,17 @@ class PlayerStatsWindow(QWidget):
                 name.setFixedWidth(110)
                 name.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 12px;")
                 row.addWidget(name)
-                pct_label = QLabel(f"{pct * 100:.0f}-й перцентиль")
+                pct100 = pct * 100
+                # "N-й перцентиль" means nothing to most players without
+                # already knowing what a percentile is - "лучше/хуже X%
+                # игроков" says the same thing in plain language.
+                if pct100 >= 50:
+                    pct_text = f"лучше {pct100:.0f}% игроков"
+                else:
+                    pct_text = f"хуже {100 - pct100:.0f}% игроков"
+                pct_label = QLabel(pct_text)
                 pct_label.setStyleSheet(
-                    f"color: {_winrate_color(pct * 100)}; font-family: 'Inter'; "
+                    f"color: {_winrate_color(pct100)}; font-family: 'Inter'; "
                     "font-size: 12px; font-weight: 600;"
                 )
                 row.addWidget(pct_label)
@@ -322,8 +345,13 @@ class PlayerStatsWindow(QWidget):
                 row = QHBoxLayout()
                 row.addWidget(_icon_label(get_item_icon_path_by_name(key), RECAP_ITEM_ICON_SIZE))
                 mins, secs = divmod(max(0, purchase_time), 60)
-                time_label = QLabel(f"{mins}:{secs:02d}")
-                time_label.setStyleSheet("color: #888899; font-family: 'Inter'; font-size: 11px;")
+                threshold = _ITEM_LATE_THRESHOLD_SECONDS.get(key)
+                is_late = threshold is not None and purchase_time > threshold
+                time_label = QLabel(f"{mins}:{secs:02d}" + ("  ⚠ позже обычного" if is_late else ""))
+                time_label.setStyleSheet(
+                    f"color: {'#e2704c' if is_late else '#888899'}; font-family: 'Inter'; "
+                    f"font-size: 11px;{' font-weight: 600;' if is_late else ''}"
+                )
                 row.addWidget(time_label)
                 row.addStretch()
                 self._layout.addLayout(row)
