@@ -15,6 +15,9 @@ on:
         description: "Version to stamp the installer with (e.g. v1.0.3)"
         required: true
 
+permissions:
+  contents: write # default GITHUB_TOKEN is read-only otherwise - needed to attach the installer to the release
+
 jobs:
   build:
     runs-on: windows-latest
