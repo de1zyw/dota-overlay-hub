@@ -10,8 +10,7 @@ master gets committed to mid-fix constantly during active development;
 comparing against that would nag the user to rebuild into a possibly
 half-broken state. A release is only cut when a point is actually meant
 to be handed to someone."""
-import os
-import subprocess
+import webbrowser
 
 import requests
 
@@ -19,6 +18,7 @@ import platform_utils
 
 _REPO = "de1zyw/dota-overlay-hub"
 _LATEST_RELEASE_URL = f"https://api.github.com/repos/{_REPO}/releases/latest"
+_RELEASES_PAGE_URL = f"https://github.com/{_REPO}/releases/latest"
 
 
 def _read_build_tag():
@@ -59,17 +59,18 @@ def check_for_update():
     return latest != current
 
 
-def relaunch_build_and_exit():
-    """Re-runs build.bat (which lives next to the exe after any successful
-    build - bootstrapped or not) in its own console window, then the
-    caller should quit the app immediately so the exe file isn't locked
-    when build.bat tries to overwrite it. Windows-only - build.bat is a
-    batch file, and this whole rebuild-in-place flow doesn't exist for
-    the Linux install (install.sh isn't self-rerunning like this)."""
-    if not platform_utils.IS_WINDOWS:
+def open_latest_release_page():
+    """Distribution moved from "friend self-builds via build.bat" to a
+    CI-built Inno Setup installer attached to each GitHub Release (see
+    installer.iss / .github/workflows/build-installer.yml) - there's no
+    exe to overwrite in-place anymore, so the update flow is just "send
+    them to the download page", same on every platform. Never raises:
+    webbrowser.open() failing (no default browser configured, headless
+    box) just means the button didn't do anything, not a crash."""
+    try:
+        webbrowser.open(_RELEASES_PAGE_URL)
+        return True
+    except Exception:
         return False
-    build_bat = os.path.join(platform_utils.data_dir(), "build.bat")
-    if not os.path.isfile(build_bat):
-        return False
-    subprocess.Popen(["cmd", "/c", "start", "", "build.bat"], cwd=platform_utils.data_dir())
-    return True
+
+

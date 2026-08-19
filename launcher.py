@@ -853,7 +853,7 @@ class LauncherWindow(QWidget):
         # padding left no room for real text there, clipping it. Same style,
         # tighter padding, short label instead.
         self._update_btn.setStyleSheet(PRIMARY_BUTTON_STYLE.replace("padding: 8px 16px;", "padding: 8px 4px;"))
-        self._update_btn.setToolTip("Доступна новая версия — нажми, чтобы пересобрать")
+        self._update_btn.setToolTip("Доступна новая версия — нажми, чтобы открыть страницу загрузки")
         self._update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._update_btn.setVisible(False)
         self._update_btn.clicked.connect(self._on_update_clicked)
@@ -957,14 +957,14 @@ class LauncherWindow(QWidget):
 
     def _on_update_clicked(self):
         import update_checker
-        self._update_btn.setEnabled(False)
-        self._update_btn.setText("Обновляю...")
-        if update_checker.relaunch_build_and_exit():
-            QApplication.instance().quit()
+        if update_checker.open_latest_release_page():
+            self._update_btn.setEnabled(False)
+            self._update_btn.setText("Открыл в браузере")
         else:
-            self._update_btn.setEnabled(True)
             self._update_btn.setText("⬆ Не удалось")
-            self._update_btn.setToolTip("Не нашёл build.bat рядом — обнови вручную")
+            self._update_btn.setToolTip(
+                f"Не смог открыть браузер — скачай вручную: {update_checker._RELEASES_PAGE_URL}"
+            )
 
     def _switch_page(self, index, nav_buttons):
         if index == 1 and self._mods_page is None:
