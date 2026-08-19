@@ -53,11 +53,9 @@ from PyQt6.QtWidgets import (
 )
 
 import config
-import discord_presence
 import discord_presence_settings
 import hotkey_settings
 import mod_language_settings
-import mod_manager
 import overlay_position_settings
 import platform_utils
 import profile_lookup_history
@@ -66,7 +64,14 @@ from launcher_checks import (
     STATUS_ERROR, STATUS_OK, STATUS_WARN,
 )
 from logs_view import list_log_runs
-from mods_page import LANGUAGE_FIELD_STYLE_OK, LANGUAGE_FIELD_STYLE_WARN, _ModsPage
+# LANGUAGE_FIELD_STYLE_OK/_WARN and _ModsPage are NOT imported here at
+# module level - mods_page.py itself imports mod_manager and mod_catalog,
+# both of which import `requests` at their own top level (~53ms measured
+# via -X importtime), and mods_page's own module body (cart_dialog etc.)
+# adds more on top. Every use of these three names below is already
+# inside a lazily-built page (_SettingsPage / the Mods-tab branch of
+# _switch_page - see their own comments), so importing mods_page itself
+# only where first actually needed defers that whole chain the same way.
 from overlay_window import _GradientPanel
 from ui_common import (
     PRIMARY_BUTTON_STYLE,
@@ -475,6 +480,15 @@ class _SettingsPage(QWidget):
 
     def __init__(self, on_language_changed=None):
         super().__init__()
+        # Local, not module-level, imports - see launcher.py's own
+        # LauncherWindow.__init__ comment on why this page is built lazily:
+        # discord_presence/mod_manager pull in `requests` and `pypresence`/
+        # asyncio respectively (~100ms combined, measured), and this is the
+        # only class in launcher.py that ever touches either one (or needs
+        # mods_page's own style constants, same reasoning).
+        import discord_presence
+        import mod_manager
+        from mods_page import LANGUAGE_FIELD_STYLE_OK, LANGUAGE_FIELD_STYLE_WARN
         self._on_language_changed = on_language_changed
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -636,6 +650,8 @@ class _SettingsPage(QWidget):
         )
 
     def _on_save_language(self):
+        import mod_manager
+        from mods_page import LANGUAGE_FIELD_STYLE_OK, LANGUAGE_FIELD_STYLE_WARN
         new_language = self._language_field.text().strip()
         if new_language == mod_manager.get_language():
             return
@@ -672,6 +688,7 @@ class _SettingsPage(QWidget):
                 self._on_language_changed()
 
     def _on_save_discord(self):
+        import discord_presence
         enabled = self._discord_enabled_checkbox.isChecked()
         ok = discord_presence_settings.save(enabled, discord_presence_settings.DEFAULT_CLIENT_ID)
         if ok and enabled:
@@ -865,14 +882,43 @@ class LauncherWindow(QWidget):
             "QScrollArea > QWidget > QWidget { background: transparent; }"
             + SCROLLBAR_STYLE
         )
-        self._mods_page = _ModsPage()
+        # _ModsPage is NOT built here despite every other page being eager -
+        # measured (temporary timing prints around each page's constructor,
+        # 2026-08-19) at ~176ms on a warm mod-catalog cache, dwarfing every
+        # other page combined (next-most-expensive was _OverlaysPage at
+        # ~10ms) and reached BEFORE window.show(), so it was pure added
+        # time-to-visible for the ~90% of launches that land on the default
+        # Overlays tab and never open Mods this session. Worse, on a cold
+        # or expired (6h TTL) catalog cache, mod_catalog.get_categories()/
+        # get_mods() behind it does a synchronous requests.get() per call -
+        # a real network stall on the main thread before any window is even
+        # shown. A plain placeholder QWidget holds its slot in the stack;
+        # _switch_page swaps in the real page (built once, then cached like
+        # self._overlay_app below) the first time the user actually clicks
+        # "МОДЫ". Same lazy-construction-on-first-use shape as
+        # start_overlay_and_hide's deferred `from app import OverlayApp`.
+        self._mods_page = None
+        mods_placeholder = QWidget()
+        self._mods_page_placeholder = mods_placeholder
         self._logs_page = _LogsPage()
-        self._settings_page = _SettingsPage(on_language_changed=self._mods_page._refresh_footer)
+        # Same lazy-placeholder treatment as _ModsPage above, for a
+        # different reason: _SettingsPage.__init__ calls mod_manager.
+        # get_language() and discord_presence.available(), and importing
+        # those two modules (moved to local imports inside _SettingsPage
+        # itself - see there) pulls in `requests` and `pypresence`->
+        # asyncio respectively - measured at ~57ms and ~42ms wall time.
+        # Neither module is otherwise needed anywhere else in launcher.py,
+        # so building this page eagerly meant every startup paid ~100ms
+        # for two packages the user might never trigger a Settings-page
+        # visit to actually need this session.
+        self._settings_page = None
+        settings_placeholder = QWidget()
+        self._settings_page_placeholder = settings_placeholder
         self._history_page = _HistoryPage()
         self._stack.addWidget(overlays_scroll)
-        self._stack.addWidget(self._mods_page)
+        self._stack.addWidget(mods_placeholder)
         self._stack.addWidget(self._logs_page)
-        self._stack.addWidget(self._settings_page)
+        self._stack.addWidget(settings_placeholder)
         self._stack.addWidget(self._history_page)
         content_layout.addWidget(self._stack)
         panel_layout.addWidget(content)
@@ -921,6 +967,22 @@ class LauncherWindow(QWidget):
             self._update_btn.setToolTip("Не нашёл build.bat рядом — обнови вручную")
 
     def _switch_page(self, index, nav_buttons):
+        if index == 1 and self._mods_page is None:
+            # First visit to the Mods tab this run - build the real page now
+            # and swap it in for the placeholder (see the comment where the
+            # placeholder is created). Remove-then-insert, not just
+            # insertWidget over the placeholder, so the placeholder is
+            # actually freed rather than left as an orphaned stack entry.
+            from mods_page import _ModsPage
+            self._mods_page = _ModsPage()
+            self._stack.removeWidget(self._mods_page_placeholder)
+            self._stack.insertWidget(1, self._mods_page)
+            self._mods_page_placeholder = None
+        elif index == 3 and self._settings_page is None:
+            self._settings_page = _SettingsPage(on_language_changed=self._on_mods_language_changed)
+            self._stack.removeWidget(self._settings_page_placeholder)
+            self._stack.insertWidget(3, self._settings_page)
+            self._settings_page_placeholder = None
         self._stack.setCurrentIndex(index)
         for i, btn in enumerate(nav_buttons):
             btn.setChecked(i == index)
@@ -930,6 +992,15 @@ class LauncherWindow(QWidget):
             self._logs_page.refresh()
         elif index == 4:
             self._history_page.refresh()
+
+    def _on_mods_language_changed(self):
+        # The Mods page's footer shows the currently-installed language -
+        # only worth refreshing if that page has actually been built
+        # (see _switch_page); if the user changes language from Settings
+        # before ever opening Mods, _ModsPage's own __init__ reads the
+        # current language fresh when it's eventually built anyway.
+        if self._mods_page is not None:
+            self._mods_page._refresh_footer()
 
     def start_overlay_and_hide(self):
         if self._overlay_app is None:

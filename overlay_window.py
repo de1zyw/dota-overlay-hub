@@ -16,7 +16,16 @@ from PyQt6.QtWidgets import (
 import config
 import error_codes
 import window_position
-from assets import get_faction_icon_path, get_hero_icon_path, get_item_icon_path, get_rank_icon_path
+# `assets` is deliberately NOT imported here at module level - it imports
+# `requests` (and, through opendota_client, its Session/throttle setup),
+# measured via -X importtime at ~55-60ms - and this file's _GradientPanel
+# is imported by launcher.py for the HUB window's own background panel,
+# so a top-level import here meant every hub startup paid that cost
+# before the hub window even showed, regardless of whether any Dota match
+# (the only time these icon lookups actually run) was ever seen. Each call
+# site below does its own local `import assets` instead - cheap
+# (sys.modules-cached) after the first real call, first paid only once an
+# icon actually needs fetching.
 
 ACCENT_PINK = QColor("#FF9CE3")
 ACCENT_BLUE = QColor("#7DD3FC")
@@ -89,7 +98,8 @@ def _hero_pick_icon(hero_id):
     fetch) sized to match, so the row's icon column stays aligned whether or
     not the pick is known yet."""
     if hero_id:
-        return _icon_label(get_hero_icon_path(hero_id), HERO_ICON_SIZE)
+        import assets
+        return _icon_label(assets.get_hero_icon_path(hero_id), HERO_ICON_SIZE)
 
     label = QLabel("?")
     label.setFixedSize(HERO_ICON_SIZE, HERO_ICON_SIZE)
@@ -109,6 +119,7 @@ def _match_history_group(recent_matches, show_kda=False):
     background's purple accent, so the win/loss signal stays unambiguous.
     show_kda=True (player_stats_window.py only - the compact draft row has
     no room for it) adds a small "K/D/A" caption under each icon."""
+    import assets
     group = QWidget()
     layout = QHBoxLayout(group)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -119,7 +130,7 @@ def _match_history_group(recent_matches, show_kda=False):
         inner = MATCH_ICON_SIZE - 2 * MATCH_ICON_BORDER
         label = QLabel()
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        path = get_hero_icon_path(match.hero_id)
+        path = assets.get_hero_icon_path(match.hero_id)
         if path:
             pixmap = QPixmap(path)
             if not pixmap.isNull():
@@ -213,6 +224,7 @@ class _GradientPanel(QWidget):
 
 
 def _player_row(stats, hero_id, expanded, party_account_ids):
+    import assets
     # A QFrame (not QWidget) is used here specifically because it lets the
     # "this is you" highlight below paint a background/border from a
     # stylesheet - plain QWidgets don't paint stylesheet backgrounds
@@ -294,7 +306,7 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
     nickname_label.setStyleSheet(nickname_style)
     layout.addWidget(nickname_label)
 
-    layout.addWidget(_icon_label(get_rank_icon_path(stats.rank_tier), ICON_SIZE))
+    layout.addWidget(_icon_label(assets.get_rank_icon_path(stats.rank_tier), ICON_SIZE))
     layout.addWidget(_hero_pick_icon(hero_id))
     layout.addWidget(_match_history_group(stats.recent_matches))
 
@@ -332,7 +344,7 @@ def _player_row(stats, hero_id, expanded, party_account_ids):
     items_layout.setContentsMargins(8, 0, 4, 4)
     items_layout.setSpacing(3)
     for item_id in stats.items:
-        icon_path = get_item_icon_path(item_id)
+        icon_path = assets.get_item_icon_path(item_id)
         if icon_path:
             items_layout.addWidget(_icon_label(icon_path, ITEM_ICON_SIZE))
     items_layout.addStretch()
@@ -375,12 +387,13 @@ class OverlayWindow(QWidget):
         """RADIANT/DIRE header: faction icon (real emblem if fetched, else
         nothing - text alone still reads fine) beside the label text, tinted
         with the same green/red convention used for win/loss elsewhere."""
+        import assets
         header = QWidget()
         layout = QHBoxLayout(header)
         layout.setContentsMargins(0, 6, 0, 4)
         layout.setSpacing(ICON_GAP)
 
-        icon_path = get_faction_icon_path(team)
+        icon_path = assets.get_faction_icon_path(team)
         if icon_path:
             layout.addWidget(_icon_label(icon_path, FACTION_ICON_SIZE))
 
