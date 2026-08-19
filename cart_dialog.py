@@ -20,7 +20,9 @@ from PyQt6.QtWidgets import (
 import mod_catalog
 import mod_manager
 import mod_presets
-from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE, Worker
+from ui_common import (
+    PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE, Worker, animate_button_press,
+)
 
 ITEM_THUMB_SIZE = 48
 
@@ -338,16 +340,16 @@ class CartDialog(QDialog):
         left.addWidget(self._presets_list, 1)
 
         preset_buttons = QHBoxLayout()
-        load_preset_btn = QPushButton("Загрузить")
-        load_preset_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
-        load_preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        load_preset_btn.clicked.connect(self._on_load_preset)
-        preset_buttons.addWidget(load_preset_btn)
-        delete_preset_btn = QPushButton("Удалить")
-        delete_preset_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
-        delete_preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        delete_preset_btn.clicked.connect(self._on_delete_preset)
-        preset_buttons.addWidget(delete_preset_btn)
+        self._load_preset_btn = QPushButton("Загрузить")
+        self._load_preset_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self._load_preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._load_preset_btn.clicked.connect(self._on_load_preset)
+        preset_buttons.addWidget(self._load_preset_btn)
+        self._delete_preset_btn = QPushButton("Удалить")
+        self._delete_preset_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self._delete_preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._delete_preset_btn.clicked.connect(self._on_delete_preset)
+        preset_buttons.addWidget(self._delete_preset_btn)
         left.addLayout(preset_buttons)
         root.addLayout(left)
 
@@ -383,16 +385,16 @@ class CartDialog(QDialog):
         right.addWidget(self._empty_label)
 
         action_row = QHBoxLayout()
-        save_btn = QPushButton("Сохранить набор")
-        save_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
-        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.clicked.connect(self._on_save_pack)
-        action_row.addWidget(save_btn)
-        clear_btn = QPushButton("Очистить")
-        clear_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
-        clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        clear_btn.clicked.connect(self._on_clear)
-        action_row.addWidget(clear_btn)
+        self._save_pack_btn = QPushButton("Сохранить набор")
+        self._save_pack_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self._save_pack_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._save_pack_btn.clicked.connect(self._on_save_pack)
+        action_row.addWidget(self._save_pack_btn)
+        self._clear_btn = QPushButton("Очистить")
+        self._clear_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self._clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clear_btn.clicked.connect(self._on_clear)
+        action_row.addWidget(self._clear_btn)
         action_row.addStretch()
         self._install_btn = QPushButton()
         self._install_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
@@ -475,6 +477,7 @@ class CartDialog(QDialog):
         self._refresh_items()
 
     def _on_clear(self):
+        animate_button_press(self._clear_btn)
         self._selected.clear()
         self._on_change()
         self._refresh_items()
@@ -500,6 +503,7 @@ class CartDialog(QDialog):
         return None
 
     def _on_save_pack(self):
+        animate_button_press(self._save_pack_btn)
         if not self._selected:
             return
         name, ok = QInputDialog.getText(self, "Сохранить набор", "Имя набора:")
@@ -509,6 +513,7 @@ class CartDialog(QDialog):
         self._refresh_presets_list()
 
     def _on_load_preset(self):
+        animate_button_press(self._load_preset_btn)
         name = self._selected_preset_name()
         if not name:
             return
@@ -532,6 +537,7 @@ class CartDialog(QDialog):
             )
 
     def _on_delete_preset(self):
+        animate_button_press(self._delete_preset_btn)
         name = self._selected_preset_name()
         if not name:
             return
@@ -564,6 +570,7 @@ class CartDialog(QDialog):
     # --- install ---
 
     def _on_install(self):
+        animate_button_press(self._install_btn)
         jobs = list(self._selected.items())
         if not jobs:
             return

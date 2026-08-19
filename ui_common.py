@@ -4,8 +4,8 @@ of duplicated per-file (which is what the first two copies did, before a
 third caller made that not worth it anymore) or imported from launcher.py
 directly (which would be circular - launcher.py imports mods_page.py to
 build its МОДЫ tab)."""
-from PyQt6.QtCore import QThread, Qt, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QApplication, QLabel
+from PyQt6.QtCore import QPropertyAnimation, QThread, Qt, QTimer, pyqtSignal
+from PyQt6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel
 
 SECONDARY_BUTTON_STYLE = """
 QPushButton {
@@ -107,6 +107,32 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     background: none;
 }
 """
+
+
+def animate_button_press(button):
+    """Brief opacity dip-and-recover on click - QSS's :pressed color swap
+    alone reads as "different state", not "responded to your click", and
+    every button here already sits inside a QVBoxLayout/QHBoxLayout, so a
+    geometry-based press/bounce animation would fight the layout manager
+    repositioning it right back (a real, common Qt gotcha - geometry
+    animations only behave on manually-positioned widgets). Opacity via
+    QGraphicsOpacityEffect doesn't touch layout at all, same mechanism
+    already used for launcher.py's own tab-switch fade. Call this from a
+    button's own clicked handler, not connected directly to `clicked`
+    (handlers need the click for their real action too)."""
+    effect = QGraphicsOpacityEffect(button)
+    button.setGraphicsEffect(effect)
+    anim = QPropertyAnimation(effect, b"opacity", button)
+    anim.setDuration(220)
+    anim.setKeyValueAt(0.0, 1.0)
+    anim.setKeyValueAt(0.35, 0.45)
+    anim.setKeyValueAt(1.0, 1.0)
+    # Kept as an attribute (not just a local variable) so Python doesn't
+    # garbage-collect the animation object mid-flight - QPropertyAnimation
+    # being parented to `button` handles the C++ side, but PyQt's own
+    # wrapper needs a live Python reference too.
+    button._press_anim = anim
+    anim.start()
 
 
 class _ClickToCopyLabel(QLabel):

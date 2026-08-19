@@ -31,7 +31,7 @@ import mod_manager
 import platform_utils
 from cart_dialog import CartDialog
 from tools_panel import _ToolsPanel
-from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE
+from ui_common import PRIMARY_BUTTON_STYLE, SCROLLBAR_STYLE, SECONDARY_BUTTON_STYLE, animate_button_press
 from ui_common import Worker as _Worker
 
 # The OS toggle's "active platform" pill - same gradient as PRIMARY so it
@@ -266,6 +266,7 @@ class _ModCard(QFrame):
         self._apply_preview_scale()
 
     def _on_action_clicked(self):
+        animate_button_press(self._action_btn)
         # Uninstall-only now - see _refresh_button_state, this button is
         # hidden whenever the mod isn't installed, so there's nothing else
         # this click could mean.
@@ -829,11 +830,11 @@ class _ModsPage(QWidget):
         footer_layout.addWidget(self._footer_status_label)
         footer_layout.addStretch()
 
-        open_folder_btn = QPushButton("Открыть папку модов")
-        open_folder_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
-        open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        open_folder_btn.clicked.connect(self._open_mods_folder)
-        footer_layout.addWidget(open_folder_btn)
+        self._open_folder_btn = QPushButton("Открыть папку модов")
+        self._open_folder_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self._open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._open_folder_btn.clicked.connect(self._open_mods_folder)
+        footer_layout.addWidget(self._open_folder_btn)
 
         self._clear_selection_btn = QPushButton("Очистить выбор")
         self._clear_selection_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
@@ -931,6 +932,7 @@ class _ModsPage(QWidget):
         self._footer_status_label.setText(status)
 
     def _open_mods_folder(self):
+        animate_button_press(self._open_folder_btn)
         mods_dir = mod_manager.get_mods_dir()
         os.makedirs(mods_dir, exist_ok=True)
         platform_utils.open_path(mods_dir)
@@ -954,10 +956,12 @@ class _ModsPage(QWidget):
 
     def _on_category_page_action(self, action):
         if action == "clear":
+            animate_button_press(self._clear_selection_btn)
             self._selected.clear()
             self._refresh_cart_buttons()
             self._category_page._rebuild_grid()
         elif action == "install":
+            animate_button_press(self._batch_btn)
             self._open_cart()
 
     def _open_cart(self):

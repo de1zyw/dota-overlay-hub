@@ -80,6 +80,7 @@ from ui_common import (
     SECONDARY_BUTTON_STYLE,
     Worker,
     _ClickToCopyLabel,
+    animate_button_press,
 )
 
 _STATUS_COLOR = {
@@ -522,11 +523,11 @@ class _SettingsPage(QWidget):
         self._status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
         layout.addWidget(self._status_label)
 
-        save_btn = QPushButton("Сохранить")
-        save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
-        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.clicked.connect(self._on_save)
-        layout.addWidget(save_btn)
+        self._hotkeys_save_btn = QPushButton("Сохранить")
+        self._hotkeys_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._hotkeys_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._hotkeys_save_btn.clicked.connect(self._on_save)
+        layout.addWidget(self._hotkeys_save_btn)
 
         position_title = QLabel("Расположение оверлея")
         position_title.setStyleSheet(
@@ -580,21 +581,21 @@ class _SettingsPage(QWidget):
             "font-family: monospace; font-size: 12px; }"
         )
         library_row.addWidget(self._library_field)
-        library_browse_btn = QPushButton("Обзор…")
-        library_browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        library_browse_btn.clicked.connect(self._on_browse_library)
-        library_row.addWidget(library_browse_btn)
+        self._library_browse_btn = QPushButton("Обзор…")
+        self._library_browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._library_browse_btn.clicked.connect(self._on_browse_library)
+        library_row.addWidget(self._library_browse_btn)
         layout.addLayout(library_row)
 
         self._library_status_label = QLabel("")
         self._library_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
         layout.addWidget(self._library_status_label)
 
-        library_save_btn = QPushButton("Сохранить")
-        library_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
-        library_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        library_save_btn.clicked.connect(self._on_save_library)
-        layout.addWidget(library_save_btn)
+        self._library_save_btn = QPushButton("Сохранить")
+        self._library_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._library_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._library_save_btn.clicked.connect(self._on_save_library)
+        layout.addWidget(self._library_save_btn)
 
         account_row = QHBoxLayout()
         account_label = QLabel("Account ID")
@@ -615,11 +616,11 @@ class _SettingsPage(QWidget):
         self._account_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
         layout.addWidget(self._account_status_label)
 
-        account_save_btn = QPushButton("Сохранить")
-        account_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
-        account_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        account_save_btn.clicked.connect(self._on_save_account)
-        layout.addWidget(account_save_btn)
+        self._account_save_btn = QPushButton("Сохранить")
+        self._account_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._account_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._account_save_btn.clicked.connect(self._on_save_account)
+        layout.addWidget(self._account_save_btn)
 
         language_title = QLabel("Язык модов")
         language_title.setStyleSheet(
@@ -656,11 +657,11 @@ class _SettingsPage(QWidget):
         self._language_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
         layout.addWidget(self._language_status_label)
 
-        language_save_btn = QPushButton("Сохранить")
-        language_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
-        language_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        language_save_btn.clicked.connect(self._on_save_language)
-        layout.addWidget(language_save_btn)
+        self._language_save_btn = QPushButton("Сохранить")
+        self._language_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._language_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._language_save_btn.clicked.connect(self._on_save_language)
+        layout.addWidget(self._language_save_btn)
 
         discord_title = QLabel("Discord Rich Presence")
         discord_title.setStyleSheet(
@@ -690,11 +691,11 @@ class _SettingsPage(QWidget):
         self._discord_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
         layout.addWidget(self._discord_status_label)
 
-        discord_save_btn = QPushButton("Сохранить")
-        discord_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
-        discord_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        discord_save_btn.clicked.connect(self._on_save_discord)
-        layout.addWidget(discord_save_btn)
+        self._discord_save_btn = QPushButton("Сохранить")
+        self._discord_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self._discord_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._discord_save_btn.clicked.connect(self._on_save_discord)
+        layout.addWidget(self._discord_save_btn)
 
         about_title = QLabel("О программе")
         about_title.setStyleSheet(
@@ -724,6 +725,7 @@ class _SettingsPage(QWidget):
         )
 
     def _on_save_language(self):
+        animate_button_press(self._language_save_btn)
         import mod_manager
         from mods_page import LANGUAGE_FIELD_STYLE_OK, LANGUAGE_FIELD_STYLE_WARN
         new_language = self._language_field.text().strip()
@@ -762,11 +764,13 @@ class _SettingsPage(QWidget):
                 self._on_language_changed()
 
     def _on_browse_library(self):
+        animate_button_press(self._library_browse_btn)
         chosen = QFileDialog.getExistingDirectory(self, "Папка Steam-библиотеки (содержит steamapps)")
         if chosen:
             self._library_field.setText(chosen)
 
     def _on_save_library(self):
+        animate_button_press(self._library_save_btn)
         import steam_library
         ok = steam_library.save_library_override(self._library_field.text())
         if not ok:
@@ -777,6 +781,7 @@ class _SettingsPage(QWidget):
         )
 
     def _on_save_account(self):
+        animate_button_press(self._account_save_btn)
         import local_steam
         raw = self._account_field.text().strip()
         if raw and not raw.isdigit():
@@ -793,6 +798,7 @@ class _SettingsPage(QWidget):
         )
 
     def _on_save_discord(self):
+        animate_button_press(self._discord_save_btn)
         import discord_presence
         enabled = self._discord_enabled_checkbox.isChecked()
         ok = discord_presence_settings.save(enabled, discord_presence_settings.DEFAULT_CLIENT_ID)
@@ -813,6 +819,7 @@ class _SettingsPage(QWidget):
         )
 
     def _on_save(self):
+        animate_button_press(self._hotkeys_save_btn)
         values = {key: field.text().strip() for key, field in self._fields.items()}
         ok = hotkey_settings.save(values)
         if ok:
