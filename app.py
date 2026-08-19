@@ -54,7 +54,7 @@ import profile_lookup_history
 import profile_lookup_settings
 from candidate_picker_window import CandidatePickerWindow
 from ocr_capture import capture_region, read_nickname
-from opendota_client import PlayerStats, fetch_match_roster, fetch_player_stats, search_players
+from opendota_client import PlayerStats, fetch_match_recap, fetch_match_roster, fetch_player_stats, search_players
 from overlay_window import OverlayWindow
 from player_stats_window import PlayerStatsWindow
 from region_calibrator import RegionCalibrator
@@ -151,7 +151,15 @@ class _MainThreadBridge(QObject):
             self._player_stats_window.render_stats(None, empty_message=message)
             self._player_stats_window.show_stats()
             return
-        self._player_stats_window.hide_stats()
+        # Recap panel sits alongside the roster overlay (not instead of it,
+        # not hidden) - own performance and "who did I just play with" are
+        # both useful right after a match, no reason to make picking one
+        # hide the other.
+        if payload.get("recap") is not None:
+            self._player_stats_window.render_recap(payload["recap"])
+            self._player_stats_window.show_stats()
+        else:
+            self._player_stats_window.hide_stats()
         self._window.render_lobby(payload["radiant"], payload["dire"], payload["current_picks"], set())
         event_log.log("OVERLAY_SHOW", reason="last_match")
         self._window.show_overlay()
@@ -412,8 +420,18 @@ class OverlayApp:
         # would silently pair the wrong hero_id with the wrong account_id.
         current_picks = {aid: hero_id for _, _, aid, hero_id, _ in roster if aid is not None}
 
+        # Own-performance recap - reuses fetch_match_roster's own cache entry
+        # for this match_id (same 15s TTL), so this costs no extra real
+        # HTTP request. None (private profile, or MY_ACCOUNT_ID unset) is a
+        # valid, expected result - the roster overlay still shows either way,
+        # it's only the recap panel that's skipped.
+        recap = fetch_match_recap(match_id, config.MY_ACCOUNT_ID) if config.MY_ACCOUNT_ID else None
+
         event_log.log("LAST_MATCH_RESULT", stage="ready", match_id=match_id)
-        self.bridge.last_match_ready.emit({"radiant": radiant, "dire": dire, "reason": None, "current_picks": current_picks})
+        self.bridge.last_match_ready.emit({
+            "radiant": radiant, "dire": dire, "reason": None,
+            "current_picks": current_picks, "recap": recap,
+        })
 
     def start_services(self):
         event_log.init()

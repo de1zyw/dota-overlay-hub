@@ -196,6 +196,60 @@ def fetch_match_roster(match_id):
     return roster
 
 
+# Cheap/starting-gold items filtered out of key_purchases below - they're
+# bought within the first ~90s by every player regardless of build and
+# would drown out the actually build-defining purchases. Not exhaustive by
+# design (consumables like tango/clarity/wards are cheap enough on their
+# own that a stray one slipping through doesn't hurt readability).
+_TRIVIAL_ITEM_KEYS = {
+    "tango", "tango_single", "flask", "clarity", "faerie_fire", "enchanted_mango",
+    "branches", "circlet", "mantle", "gauntlets", "slippers", "sobi_mask",
+    "quarterstaff", "ring_of_protection", "iron_branch", "ward_observer",
+    "ward_sentry", "smoke_of_deceit", "tpscroll", "gem", "boots",
+}
+
+
+def fetch_match_recap(match_id, account_id):
+    """Returns a PlayerStats populated with account_id's own performance in
+    match_id (kills/deaths/gpm/benchmarks/etc.), or None under the exact
+    same conditions fetch_match_roster returns None (not-yet-indexed match,
+    OpenDota error, account_id not present as a player in this match).
+    Shares fetch_match_roster's cache entry - calling both for the same
+    match_id costs one real HTTP request, not two, within the 15s TTL."""
+    try:
+        data = _cached_get(f"/matches/{match_id}", ttl=15)
+    except OpenDotaError:
+        return None
+    players = data.get("players") or []
+    me = next((p for p in players if p.get("account_id") == account_id), None)
+    if me is None:
+        return None
+
+    purchases = [
+        (entry["key"], entry["time"])
+        for entry in (me.get("purchase_log") or [])
+        if entry.get("key") and entry["key"] not in _TRIVIAL_ITEM_KEYS and entry.get("time", -1) >= 0
+    ]
+
+    return PlayerStats(
+        account_id=account_id,
+        nickname=me.get("personaname") or "?",
+        hidden=False,
+        match_id=match_id,
+        hero_id=me.get("hero_id"),
+        won=bool(me.get("win")),
+        duration=data.get("duration"),
+        kills=me.get("kills", 0), deaths=me.get("deaths", 0), assists=me.get("assists", 0),
+        gpm=me.get("gold_per_min", 0), xpm=me.get("xp_per_min", 0),
+        last_hits=me.get("last_hits", 0), denies=me.get("denies", 0),
+        hero_damage=me.get("hero_damage", 0), tower_damage=me.get("tower_damage", 0),
+        hero_healing=me.get("hero_healing", 0),
+        benchmarks={k: v.get("pct") for k, v in (me.get("benchmarks") or {}).items() if v.get("pct") is not None},
+        key_purchases=purchases,
+        dotabuff_url=f"https://www.dotabuff.com/matches/{match_id}",
+    )
+
+
 def search_players(name):
     """None means the search itself failed (network/rate-limit - OpenDota's
     fault); [] means it succeeded and genuinely found nobody by that name.
@@ -270,6 +324,30 @@ class PlayerStats:
     # profile-lookup, which aren't about one specific match. 7 raw item_ids
     # (6 inventory slots + neutral item), 0 = empty slot.
     items: list = field(default_factory=list)
+    # Below: only populated by fetch_match_recap() (the "last match" hotkey's
+    # own-performance recap), None for every other caller of this dataclass.
+    match_id: int = None
+    hero_id: int = None
+    won: bool = None
+    duration: int = None
+    kills: int = None
+    deaths: int = None
+    assists: int = None
+    gpm: int = None
+    xpm: int = None
+    last_hits: int = None
+    denies: int = None
+    hero_damage: int = None
+    tower_damage: int = None
+    hero_healing: int = None
+    # {stat_name: percentile 0.0-1.0 vs same hero/bracket} - straight from
+    # OpenDota's own "benchmarks" field (confirmed live against a real
+    # completed match, 2026-08-19: no separate request/param needed, it's
+    # already in the same /matches/{id} payload fetch_match_roster reads).
+    benchmarks: dict = field(default_factory=dict)
+    # [(item_key, purchase_second), ...] in purchase order, consumables and
+    # starting-gold items filtered out by the caller - see fetch_match_recap.
+    key_purchases: list = field(default_factory=list)
     dotabuff_url: str = ""
     # Set only when hidden=True: WHY there's no data, so a caller can tell
     # "OpenDota is down/rate-limited, try again shortly" apart from a
