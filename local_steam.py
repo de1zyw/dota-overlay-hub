@@ -39,6 +39,40 @@ STEAM64_BASE = 76561197960265728
 # Checked first, before any auto-detection.
 _OVERRIDE_FILE = os.path.join(platform_utils.data_dir(), "steam_account_override.txt")
 
+
+def load_account_override():
+    """Raw override text as currently saved, "" if none - same pairing with
+    save_account_override() as steam_library.load_library_override() has
+    with its own save function."""
+    try:
+        with open(_OVERRIDE_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def save_account_override(account_id):
+    """Settings-page write path for the manual escape hatch documented
+    above. account_id is validated as digits-only before writing (a typo'd
+    non-numeric value would otherwise silently make every account_id-keyed
+    feature fail later, far from where the mistake was made) - empty
+    input deletes the override instead of writing an empty file, so
+    auto-detection resumes. Returns True/False, never raises."""
+    account_id = (account_id or "").strip()
+    try:
+        if not account_id:
+            if os.path.isfile(_OVERRIDE_FILE):
+                os.remove(_OVERRIDE_FILE)
+            return True
+        if not account_id.isdigit():
+            return False
+        with open(_OVERRIDE_FILE, "w", encoding="utf-8") as f:
+            f.write(account_id)
+        return True
+    except OSError:
+        return False
+
+
 # Each account entry: a 17-digit SteamID64 key followed by a brace-delimited
 # body. Bodies in this file are flat (no nested braces), so a non-nested
 # character class between the braces is sufficient.

@@ -35,6 +35,38 @@ _DEFAULT = (
 # first, before any auto-detection.
 _OVERRIDE_FILE = os.path.join(platform_utils.data_dir(), "steam_library_override.txt")
 
+
+def load_library_override():
+    """Raw override text as currently saved, "" if none - for pre-filling
+    the Settings-page field with whatever's already set, distinct from
+    find_dota_library()'s own read of this same file (that one only
+    returns it if _has_dota() confirms it's actually valid)."""
+    try:
+        with open(_OVERRIDE_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def save_library_override(path):
+    """Settings-page write path for the manual escape hatch documented
+    above - same file, same one-line-no-quotes format a user would've
+    edited by hand. Empty path deletes the override file instead of
+    writing an empty one, so auto-detection resumes. Returns True/False,
+    never raises - the caller (a UI click handler) reports failure itself."""
+    path = (path or "").strip()
+    try:
+        if not path:
+            if os.path.isfile(_OVERRIDE_FILE):
+                os.remove(_OVERRIDE_FILE)
+            return True
+        with open(_OVERRIDE_FILE, "w", encoding="utf-8") as f:
+            f.write(path)
+        return True
+    except OSError:
+        return False
+
+
 _STEAM_ROOT_CANDIDATES = (
     "~/.local/share/Steam",
     "~/.steam/steam",

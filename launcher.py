@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
+    QFileDialog,
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -547,6 +548,79 @@ class _SettingsPage(QWidget):
             layout.addWidget(radio)
         layout.addWidget(self._position_status_label)
 
+        import local_steam
+        import steam_library
+
+        steam_title = QLabel("Steam")
+        steam_title.setStyleSheet(
+            "color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px; "
+            "margin-top: 12px;"
+        )
+        layout.addWidget(steam_title)
+
+        steam_hint = QLabel(
+            "Заполняй только если авто-определение не сработало (Dota на нестандартном "
+            "пути, аккаунт не находится сам и т.п.) - пусто здесь означает "
+            "«определять автоматически»."
+        )
+        steam_hint.setWordWrap(True)
+        steam_hint.setStyleSheet("color: #888888; font-family: 'Inter'; font-size: 11px;")
+        layout.addWidget(steam_hint)
+
+        library_row = QHBoxLayout()
+        library_label = QLabel("Папка библиотеки")
+        library_label.setFixedWidth(160)
+        library_label.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 12px;")
+        library_row.addWidget(library_label)
+        self._library_field = QLineEdit(steam_library.load_library_override())
+        self._library_field.setPlaceholderText("напр. /mnt/xxxx/SteamLibrary")
+        self._library_field.setStyleSheet(
+            "QLineEdit { background-color: rgba(255,255,255,10); color: white; "
+            "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 4px 8px; "
+            "font-family: monospace; font-size: 12px; }"
+        )
+        library_row.addWidget(self._library_field)
+        library_browse_btn = QPushButton("Обзор…")
+        library_browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        library_browse_btn.clicked.connect(self._on_browse_library)
+        library_row.addWidget(library_browse_btn)
+        layout.addLayout(library_row)
+
+        self._library_status_label = QLabel("")
+        self._library_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
+        layout.addWidget(self._library_status_label)
+
+        library_save_btn = QPushButton("Сохранить")
+        library_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        library_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        library_save_btn.clicked.connect(self._on_save_library)
+        layout.addWidget(library_save_btn)
+
+        account_row = QHBoxLayout()
+        account_label = QLabel("Account ID")
+        account_label.setFixedWidth(160)
+        account_label.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 12px;")
+        account_row.addWidget(account_label)
+        self._account_field = QLineEdit(local_steam.load_account_override())
+        self._account_field.setPlaceholderText("напр. 123456789 (Steam32, не 17-значный SteamID64)")
+        self._account_field.setStyleSheet(
+            "QLineEdit { background-color: rgba(255,255,255,10); color: white; "
+            "border: 1px solid rgba(255,255,255,30); border-radius: 4px; padding: 4px 8px; "
+            "font-family: monospace; font-size: 12px; }"
+        )
+        account_row.addWidget(self._account_field)
+        layout.addLayout(account_row)
+
+        self._account_status_label = QLabel("")
+        self._account_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
+        layout.addWidget(self._account_status_label)
+
+        account_save_btn = QPushButton("Сохранить")
+        account_save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        account_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        account_save_btn.clicked.connect(self._on_save_account)
+        layout.addWidget(account_save_btn)
+
         language_title = QLabel("Язык модов")
         language_title.setStyleSheet(
             "color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px; "
@@ -686,6 +760,37 @@ class _SettingsPage(QWidget):
             )
             if self._on_language_changed:
                 self._on_language_changed()
+
+    def _on_browse_library(self):
+        chosen = QFileDialog.getExistingDirectory(self, "Папка Steam-библиотеки (содержит steamapps)")
+        if chosen:
+            self._library_field.setText(chosen)
+
+    def _on_save_library(self):
+        import steam_library
+        ok = steam_library.save_library_override(self._library_field.text())
+        if not ok:
+            self._library_status_label.setText("Не удалось сохранить (нет прав на запись?)")
+            return
+        self._library_status_label.setText(
+            "Сохранено — перезапусти приложение, чтобы применилось"
+        )
+
+    def _on_save_account(self):
+        import local_steam
+        raw = self._account_field.text().strip()
+        if raw and not raw.isdigit():
+            self._account_status_label.setText(
+                "Только цифры (Steam32 account_id, не 17-значный SteamID64)"
+            )
+            return
+        ok = local_steam.save_account_override(raw)
+        if not ok:
+            self._account_status_label.setText("Не удалось сохранить (нет прав на запись?)")
+            return
+        self._account_status_label.setText(
+            "Сохранено — перезапусти приложение, чтобы применилось"
+        )
 
     def _on_save_discord(self):
         import discord_presence
