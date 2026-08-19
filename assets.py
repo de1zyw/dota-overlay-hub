@@ -2,6 +2,7 @@
 CDN URLs (Steam's static CDN for heroes, OpenDota's own asset host for ranks).
 Never raises - a failed download just means no icon for that row, not a crash."""
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -10,6 +11,16 @@ import platform_utils
 from opendota_client import _cached_get
 
 CACHE_DIR = os.path.join(platform_utils.data_dir(), ".assets_cache")
+# Every real Dota internal hero/item name (the vocabulary Valve's own game
+# data uses) is lowercase ASCII letters/digits/underscores - nothing else
+# is a valid name, ever. Enforced before any *_by_name() lookup below
+# builds a cache filename out of one, since as of the last-match recap
+# feature that name can originate from OpenDota's own API response
+# (purchase_log keys) rather than only a hardcoded caller-chosen string -
+# a `../../` in there would otherwise let a compromised/MITM'd response
+# write outside CACHE_DIR (2026-08-19 targeted review after adding that
+# feature).
+_SAFE_INTERNAL_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 # Reused across every icon download (a whole draft roster's worth of hero
 # icons at once, first time any of them is seen) - keep-alive skips a
 # fresh TCP+TLS handshake per icon.
@@ -128,8 +139,9 @@ def get_item_icon_path(item_id):
 def get_item_icon_path_by_name(internal_name):
     """Same CDN as get_item_icon_path, but for callers that already know
     the item's internal name (e.g. a fixed, hand-picked representative
-    icon for a UI element) and have no item_id to resolve it from."""
-    if not internal_name:
+    icon for a UI element, or an OpenDota purchase_log key) and have no
+    item_id to resolve it from."""
+    if not internal_name or not _SAFE_INTERNAL_NAME_RE.match(internal_name):
         return None
     dest = os.path.join(CACHE_DIR, f"item_icon_name_{internal_name}.png")
     return _download(f"{ITEM_ICON_BASE}/{internal_name}.png", dest)
@@ -139,7 +151,7 @@ def get_hero_icon_path_by_name(internal_name):
     """Same CDN as get_hero_icon_path, but for a fixed, hand-picked
     representative hero (e.g. category_icons.py's "Heroes" icon) rather
     than resolving one from a real hero_id via OpenDota."""
-    if not internal_name:
+    if not internal_name or not _SAFE_INTERNAL_NAME_RE.match(internal_name):
         return None
     dest = os.path.join(CACHE_DIR, f"hero_icon_name_{internal_name}.png")
     return _download(f"{HERO_ICON_BASE}/{internal_name}.png", dest)
