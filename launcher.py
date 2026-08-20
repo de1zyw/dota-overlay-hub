@@ -1187,8 +1187,23 @@ class LauncherWindow(QWidget):
             self._mods_page_placeholder = None
         elif index == 3 and self._settings_page is None:
             self._settings_page = _SettingsPage(on_language_changed=self._on_mods_language_changed)
+            # Same reasoning as overlays_scroll above (__init__): this page
+            # keeps growing new sections (Steam paths, installed-mods list,
+            # etc.) and a fixed-height stack has no way to reach whatever
+            # falls below the window's bottom edge otherwise - confirmed
+            # live, the installed-mods list made this a real problem, not
+            # just a hypothetical one.
+            settings_scroll = QScrollArea()
+            settings_scroll.setWidget(self._settings_page)
+            settings_scroll.setWidgetResizable(True)
+            settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
+            settings_scroll.setStyleSheet(
+                "QScrollArea { background: transparent; } "
+                "QScrollArea > QWidget > QWidget { background: transparent; }"
+                + SCROLLBAR_STYLE
+            )
             self._stack.removeWidget(self._settings_page_placeholder)
-            self._stack.insertWidget(3, self._settings_page)
+            self._stack.insertWidget(3, settings_scroll)
             self._settings_page_placeholder = None
         self._stack.setCurrentIndex(index)
         for i, btn in enumerate(nav_buttons):
