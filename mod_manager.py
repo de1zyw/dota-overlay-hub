@@ -162,6 +162,53 @@ def list_installed():
     return _load_manifest()
 
 
+def scan_installed():
+    """Reconciles the manifest against what's actually in the mods folder
+    right now - the manifest is normally kept in sync automatically
+    (install/uninstall both update it), but nothing stops a user from
+    deleting a mod's files by hand outside the app, or (rarer) losing a
+    write partway through. Returns (stale_keys, orphan_files):
+    - stale_keys: manifest entries where ANY of their tracked files are
+      missing from disk - shown to the user as "no longer really
+      installed", offered as one-click removal from the manifest.
+    - orphan_files: pakNN-named .vpk files sitting in the mods folder that
+      no manifest entry references - not touched automatically (could be
+      dota2-minify's own output, or something the user placed by hand),
+      just surfaced so it's not a silent mystery."""
+    manifest = _load_manifest()
+    mods_dir = get_mods_dir()
+
+    stale_keys = []
+    tracked_files = set()
+    for key, entry in manifest.items():
+        for fname in entry["files"]:
+            tracked_files.add(fname)
+            full_path = os.path.join(mods_dir, fname)
+            if not os.path.isfile(full_path):
+                stale_keys.append(key)
+                break
+
+    orphan_files = []
+    try:
+        for fname in os.listdir(mods_dir):
+            if fname.lower().endswith(".vpk") and fname not in tracked_files:
+                orphan_files.append(fname)
+    except OSError:
+        pass
+
+    return stale_keys, sorted(orphan_files)
+
+
+def remove_stale_entries(keys):
+    """Drops manifest entries scan_installed() flagged as stale (files
+    already gone from disk) - doesn't touch any file, there's nothing
+    left to remove, just stops the app claiming they're still installed."""
+    manifest = _load_manifest()
+    for key in keys:
+        manifest.pop(key, None)
+    _save_manifest(manifest)
+
+
 def _used_filenames():
     """Every pakNN_dir/pakNN_NNN.vpk name that must NOT be picked for a
     new install - our own manifest, PLUS whatever .vpk files already

@@ -697,6 +697,34 @@ class _SettingsPage(QWidget):
         self._discord_save_btn.clicked.connect(self._on_save_discord)
         layout.addWidget(self._discord_save_btn)
 
+        import mod_manager
+        installed_title = QLabel("Установленные моды")
+        installed_title.setStyleSheet(
+            "color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px; "
+            "margin-top: 12px;"
+        )
+        layout.addWidget(installed_title)
+
+        self._installed_list_layout = QVBoxLayout()
+        self._installed_list_layout.setSpacing(4)
+        layout.addLayout(self._installed_list_layout)
+
+        self._installed_status_label = QLabel("")
+        self._installed_status_label.setWordWrap(True)
+        self._installed_status_label.setStyleSheet("color: #aaaaaa; font-family: 'Inter'; font-size: 11px;")
+        layout.addWidget(self._installed_status_label)
+
+        scan_row = QHBoxLayout()
+        self._scan_btn = QPushButton("Проверить на диске")
+        self._scan_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self._scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._scan_btn.clicked.connect(self._on_scan_installed)
+        scan_row.addWidget(self._scan_btn)
+        scan_row.addStretch()
+        layout.addLayout(scan_row)
+
+        self._refresh_installed_list()
+
         about_title = QLabel("О программе")
         about_title.setStyleSheet(
             "color: white; font-weight: bold; font-family: 'Inter'; font-size: 14px; "
@@ -807,6 +835,73 @@ class _SettingsPage(QWidget):
         elif ok and not enabled:
             discord_presence.clear_async()
         self._discord_status_label.setText("Сохранено" if ok else "Не удалось сохранить")
+
+    def _clear_installed_list(self):
+        while self._installed_list_layout.count():
+            item = self._installed_list_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+    def _refresh_installed_list(self):
+        import mod_manager
+        self._clear_installed_list()
+        installed = mod_manager.list_installed()
+        if not installed:
+            empty = QLabel("Ничего не установлено")
+            empty.setStyleSheet("color: #777777; font-family: 'Inter'; font-size: 11px;")
+            self._installed_list_layout.addWidget(empty)
+            return
+        for key, entry in sorted(installed.items(), key=lambda kv: kv[1]["name"]):
+            row = QHBoxLayout()
+            label = QLabel(f'{entry["name"]}  ·  {entry["category"]}')
+            label.setStyleSheet("color: #cccccc; font-family: 'Inter'; font-size: 11px;")
+            row.addWidget(label, 1)
+            remove_btn = QPushButton("✕")
+            remove_btn.setFixedSize(22, 22)
+            remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            remove_btn.setStyleSheet(
+                "QPushButton { background-color: rgba(255,255,255,10); color: #cccccc; "
+                "border: none; border-radius: 4px; font-size: 11px; } "
+                "QPushButton:hover { background-color: rgba(226,87,76,60); color: white; }"
+            )
+            remove_btn.clicked.connect(lambda _checked, k=key, b=remove_btn: self._on_remove_installed(k, b))
+            row.addWidget(remove_btn)
+            row_widget = QWidget()
+            row_widget.setLayout(row)
+            self._installed_list_layout.addWidget(row_widget)
+
+    def _on_remove_installed(self, key, button):
+        import mod_manager
+        animate_button_press(button)
+        entry = mod_manager.list_installed().get(key)
+        if entry is None:
+            return
+        uninstaller = (
+            mod_manager.uninstall_loose_mod if mod_manager.is_loose_file_category(entry["category"])
+            else mod_manager.uninstall_mod
+        )
+        uninstaller(entry["category"], entry["name"])
+        self._refresh_installed_list()
+
+    def _on_scan_installed(self):
+        import mod_manager
+        animate_button_press(self._scan_btn)
+        stale_keys, orphans = mod_manager.scan_installed()
+        parts = []
+        if stale_keys:
+            names = [mod_manager.list_installed()[k]["name"] for k in stale_keys if k in mod_manager.list_installed()]
+            mod_manager.remove_stale_entries(stale_keys)
+            parts.append(f"Убрано из списка (файлы уже удалены вручную): {', '.join(names)}")
+            self._refresh_installed_list()
+        if orphans:
+            parts.append(
+                f"На диске есть файлы, которых нет в списке приложения (не трогаю, возможно "
+                f"от dota2-minify или добавлены вручную): {', '.join(orphans)}"
+            )
+        self._installed_status_label.setText(
+            " | ".join(parts) if parts else "Всё совпадает с диском"
+        )
 
     def _on_position_toggled(self, checked, position):
         if not checked:
