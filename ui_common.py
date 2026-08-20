@@ -123,15 +123,36 @@ def animate_button_press(button):
     effect = QGraphicsOpacityEffect(button)
     button.setGraphicsEffect(effect)
     anim = QPropertyAnimation(effect, b"opacity", button)
-    anim.setDuration(220)
+    anim.setDuration(320)
     anim.setKeyValueAt(0.0, 1.0)
-    anim.setKeyValueAt(0.35, 0.45)
+    anim.setKeyValueAt(0.3, 0.15)
     anim.setKeyValueAt(1.0, 1.0)
     # Kept as an attribute (not just a local variable) so Python doesn't
     # garbage-collect the animation object mid-flight - QPropertyAnimation
     # being parented to `button` handles the C++ side, but PyQt's own
     # wrapper needs a live Python reference too.
     button._press_anim = anim
+
+    def _cleanup():
+        # A QGraphicsOpacityEffect left attached (even fully opaque, at
+        # 1.0) keeps compositing the button through an offscreen pixmap on
+        # every repaint - confirmed live: this collided with
+        # _WaveProgressBar's own 35ms repaint timer during a real install
+        # (the install button's effect was still attached while the
+        # dialog kept repainting), spamming "QPainter::begin: A paint
+        # device can only be painted by one painter at a time" and stalling
+        # real UI updates. Detach once the dip-and-recover is done, not
+        # just reset its opacity - a widget with no active effect goes
+        # back to the cheap, direct paint path.
+        #
+        # Only clear it if it's still OUR effect - a second rapid click
+        # replaces button.graphicsEffect() with a fresh one (Qt deletes
+        # the old one when replaced), and this callback firing late would
+        # otherwise rip out that newer, still-animating effect instead.
+        if button.graphicsEffect() is effect:
+            button.setGraphicsEffect(None)
+
+    anim.finished.connect(_cleanup)
     anim.start()
 
 
