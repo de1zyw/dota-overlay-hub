@@ -37,8 +37,11 @@ _session = requests.Session()
 # real GUI application, unlike the Linux build's two scriptable CLI
 # binaries (Convert/Create) - confirmed by actually downloading and
 # inspecting both zips, not assumed. There is no command-line workflow to
-# automate on Windows, so create_background() is Linux-only by design,
-# not an oversight - see its own docstring.
+# automate on Windows, so create_background() (the fully-automatic
+# pipeline) stays Linux-only by design, not an oversight - see its own
+# docstring. prepare_background_changer_windows() below is the Windows
+# counterpart: it can't run the tool for the user, only stage its input
+# and launch it for them to finish by hand.
 # Pinned to a specific known-good tag (checked by hand: v3.5 / v2.3) rather
 # than "latest" - "latest" means a future compromised release on either
 # upstream repo would get silently downloaded and executed on the next
@@ -59,8 +62,20 @@ else:
 _BACKGROUND_CHANGER_URL = (
     f"{mod_catalog.REPO_BASE}/assets/files/tools/Background%20Changer%20Linux.zip"
 )
+# Unsuffixed zip in the same catalog directory - not referenced anywhere
+# before this, found by listing the repo's assets/files/tools/ dir and
+# confirmed (by downloading + inspecting) to contain the real Windows
+# build: Background Changer/Changer.exe + its own bundled ffmpeg.exe,
+# separate from the CLI-only Linux build above.
+_BACKGROUND_CHANGER_WIN_URL = (
+    f"{mod_catalog.REPO_BASE}/assets/files/tools/Background%20Changer.zip"
+)
 
 _DIR_VPK_RE = re.compile(r"^pak\d+_dir\.vpk$", re.IGNORECASE)
+
+
+def is_pak_dir_vpk(filename):
+    return bool(_DIR_VPK_RE.match(filename))
 
 
 class ToolError(Exception):
@@ -177,17 +192,51 @@ def _move_group_to(staging_dir, group, output_dir):
     return result
 
 
+_DIR_VPK_SUFFIX_RE = re.compile(r"_dir\.vpk$", re.IGNORECASE)
+
+
+def _sibling_chunk_files(vpk_path):
+    """A *_dir.vpk whose file data lives in EXTERNAL *_NNN.vpk archives
+    (rather than embedded directly in the dir file - both are valid VPK,
+    which one a given file uses depends on how it was built) needs those
+    siblings staged in the SAME folder VPKTool runs from, or it silently
+    reads zero files - root-caused by reproducing exactly this against a
+    real merge_vpks() output: unpack_vpk() was only ever copying the lone
+    vpk_path file, and every individually-downloaded catalog mod happens
+    to embed its data (so this never showed up before merge_vpks() started
+    producing genuine dir+chunk pairs). VPKTool's own naming convention
+    (see its SPLIT_PART_RE) - "{same prefix}_NNN.vpk", 3 digits."""
+    name = os.path.basename(vpk_path)
+    if not _DIR_VPK_SUFFIX_RE.search(name):
+        return []
+    prefix = name[: -len("_dir.vpk")]
+    directory = os.path.dirname(vpk_path) or "."
+    chunk_re = re.compile(r"^" + re.escape(prefix) + r"_\d{3}\.vpk$", re.IGNORECASE)
+    try:
+        return [
+            os.path.join(directory, sibling) for sibling in os.listdir(directory)
+            if chunk_re.match(sibling)
+        ]
+    except OSError:
+        return []
+
+
 def unpack_vpk(vpk_path, output_dir):
     """Extracts a .vpk's contents into output_dir. vpk_path itself is
-    never touched - a copy is staged and operated on instead."""
+    never touched - a copy is staged and operated on instead (same for any
+    *_NNN.vpk chunk siblings it needs, see _sibling_chunk_files)."""
     binary = _get_vpktool()
     with tempfile.TemporaryDirectory(prefix="vpktool-unpack-") as staging:
+        input_names = {os.path.basename(vpk_path)}
         shutil.copy2(vpk_path, os.path.join(staging, os.path.basename(vpk_path)))
+        for chunk_path in _sibling_chunk_files(vpk_path):
+            shutil.copy2(chunk_path, os.path.join(staging, os.path.basename(chunk_path)))
+            input_names.add(os.path.basename(chunk_path))
         _run(binary, cwd=staging)
         os.makedirs(output_dir, exist_ok=True)
         extracted = []
         for name in os.listdir(staging):
-            if name == os.path.basename(vpk_path):
+            if name in input_names:
                 continue
             src = os.path.join(staging, name)
             dst = os.path.join(output_dir, name)
@@ -278,3 +327,30 @@ def create_background(media_path, output_dir):
 
         group = _collect_pak_group(work)
         return _move_group_to(work, group, output_dir)
+
+
+def prepare_background_changer_windows(media_path):
+    """Windows counterpart to create_background(): Changer.exe is a real
+    GUI app (see module docstring), so this can only stage its input and
+    launch it - not run the conversion itself. Copies media_path next to a
+    private extracted copy of Changer.exe (per the tool's own bundled
+    Guide.txt: "place video/photo next to Changer.exe, run it, wait"),
+    launches it non-blocking, and returns that staging dir. Once the user
+    finishes the run themselves, pak33_dir.vpk (plus any pakNN_NNN.vpk
+    chunk siblings) appears there for them to import back into this app."""
+    if not platform_utils.IS_WINDOWS:
+        raise ToolError("Эта функция только для Windows")
+    root = _download_and_extract(_BACKGROUND_CHANGER_WIN_URL, "BackgroundChangerWin")
+    template = os.path.join(root, "Background Changer")
+    exe = os.path.join(template, "Changer.exe")
+    if not os.path.isfile(exe):
+        raise ToolError("Background Changer: Changer.exe не найден после распаковки")
+    staging = tempfile.mkdtemp(prefix="bgchanger-win-")
+    work = os.path.join(staging, "Background Changer")
+    shutil.copytree(template, work)
+    shutil.copy2(media_path, os.path.join(work, os.path.basename(media_path)))
+    try:
+        subprocess.Popen([os.path.join(work, "Changer.exe")], cwd=work)
+    except OSError as exc:
+        raise ToolError(f"Не удалось запустить Changer.exe: {exc}") from exc
+    return work

@@ -69,23 +69,29 @@ class _ToolsPanel(QFrame):
         bg_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
         bg_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         bg_btn.clicked.connect(self._on_background)
-        # The real Windows build of this tool (Changer.exe) is a GUI app
-        # with no CLI to automate - greyed out upfront (and kept that way
-        # through every _set_busy() re-enable, see there) rather than only
-        # failing after a click, so it doesn't look broken/flaky.
-        self._bg_available = not platform_utils.IS_WINDOWS
-        if not self._bg_available:
-            bg_btn.setEnabled(False)
-            bg_btn.setToolTip(
-                "На Windows это отдельная GUI-программа — скачай Changer.exe с сайта каталога"
-            )
+        # Linux: fully automatic (needs system ffmpeg, checked below).
+        # Windows: Changer.exe is a real GUI app with no CLI to automate -
+        # this button instead stages+launches it and hands off to
+        # _import_btn for the user to bring the result back in themselves,
+        # see _on_background_windows().
         row.addWidget(bg_btn)
         self._bg_btn = bg_btn
 
+        self._buttons = [unpack_btn, pack_btn, merge_btn, bg_btn]
+
+        if platform_utils.IS_WINDOWS:
+            import_btn = QPushButton("Импортировать готовый фон")
+            import_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
+            import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            import_btn.setToolTip(
+                "После того как Changer.exe закончит — выбери здесь созданный pakNN_dir.vpk"
+            )
+            import_btn.clicked.connect(self._on_import_background_result)
+            row.addWidget(import_btn)
+            self._buttons.append(import_btn)
+
         row.addStretch()
         outer.addLayout(row)
-
-        self._buttons = [unpack_btn, pack_btn, merge_btn, bg_btn]
 
         self._status_label = QLabel("")
         self._status_label.setWordWrap(True)
@@ -96,8 +102,6 @@ class _ToolsPanel(QFrame):
 
     def _set_busy(self, busy, message=""):
         for btn in self._buttons:
-            if btn is self._bg_btn and not self._bg_available:
-                continue  # permanently disabled on this platform, not a busy-state toggle
             btn.setEnabled(not busy)
         if message:
             self._status_label.setText(message)
@@ -174,10 +178,10 @@ class _ToolsPanel(QFrame):
         )
 
     def _on_background(self):
+        if platform_utils.IS_WINDOWS:
+            self._on_background_windows()
+            return
         if not mod_tools.background_changer_available():
-            # Unreachable in practice on Windows (the button itself is
-            # disabled there, see __init__) - this only fires on Linux
-            # without ffmpeg, kept as a second layer of defense.
             self._status_label.setText("Нужен ffmpeg: sudo pacman -S ffmpeg (или пакетный менеджер твоего дистрибутива)")
             return
         media_path, _ = QFileDialog.getOpenFileName(self, "Выбери видео или фото", "", _MEDIA_FILTER)
@@ -189,3 +193,45 @@ class _ToolsPanel(QFrame):
             lambda: mod_tools.create_background(media_path, tempfile.mkdtemp(prefix="modtools-out-")),
             lambda produced: self._offer_install_or_save("tools", name, produced),
         )
+
+    def _on_background_windows(self):
+        # Changer.exe is a real GUI app (see mod_tools.py's module
+        # docstring) - nothing here can run the conversion for the user,
+        # only stage its input and launch it. Not verified end-to-end on
+        # a real Windows machine - said so upfront rather than pretending
+        # this is as solid as the Linux automatic path.
+        QMessageBox.information(
+            self, "Свой фон меню (Windows)",
+            "На Windows это отдельная программа (Changer.exe), а не консольный "
+            "инструмент — сейчас она скачается и запустится сама. Дождись, пока "
+            "она закончит обработку, затем нажми \"Импортировать готовый фон\" "
+            "и выбери созданный pakNN_dir.vpk.\n\n"
+            "Эта часть ещё не проверялась на настоящей Windows — если что-то "
+            "пойдёт не так, напиши об этом.",
+        )
+        media_path, _ = QFileDialog.getOpenFileName(self, "Выбери видео или фото", "", _MEDIA_FILTER)
+        if not media_path:
+            return
+        self._set_busy(True, "Скачиваю и запускаю Changer.exe...")
+        self._run_async(
+            lambda: mod_tools.prepare_background_changer_windows(media_path),
+            self._on_background_windows_launched,
+        )
+
+    def _on_background_windows_launched(self, work_dir):
+        self._status_label.setText(
+            f"Changer.exe запущен. Когда он закончит, файл появится тут: {work_dir} "
+            f"— нажми \"Импортировать готовый фон\" и выбери его."
+        )
+
+    def _on_import_background_result(self):
+        vpk_paths, _ = QFileDialog.getOpenFileNames(
+            self, "Выбери pakNN_dir.vpk (и файлы рядом с ним, если есть)", "", "VPK files (*.vpk)"
+        )
+        if not vpk_paths:
+            return
+        if not any(mod_tools.is_pak_dir_vpk(os.path.basename(p)) for p in vpk_paths):
+            self._status_label.setText("Нужно выбрать файл вида pakNN_dir.vpk")
+            return
+        name = f"Фон меню ({os.path.basename(vpk_paths[0])})"
+        self._offer_install_or_save("tools", name, vpk_paths)

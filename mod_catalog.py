@@ -152,9 +152,23 @@ def get_mods(category_id):
     return _expand_styles(_flatten_mods(_mods_data.get(category_id)))
 
 
+_EXTERNAL_FILE_EXTENSIONS = (".zip", ".vpk")
+
+
 def get_download_url(category_id, filename):
-    if not filename or filename.startswith("http"):
+    """Most mods' "file" is just a name inside this repo's own
+    assets/files/{category}/ - built into a raw.githubusercontent URL.
+    Some catalog entries instead give a full external URL (huggingface.co
+    mirrors, seen live in heroes/sounds) - a real, directly downloadable
+    archive if it ends in .zip/.vpk, used as-is. Anything else starting
+    with "http" (a tool's own homepage, a GitHub "tree" view of a .md doc -
+    also seen live, in "optimization") isn't a file to fetch at all, same
+    as before this distinction existed - those correctly stay unavailable
+    rather than trying to download a webpage as a mod archive."""
+    if not filename:
         return None
+    if filename.startswith("http"):
+        return filename if filename.lower().endswith(_EXTERNAL_FILE_EXTENSIONS) else None
     return f"{REPO_BASE}/assets/files/{category_id}/{filename}"
 
 

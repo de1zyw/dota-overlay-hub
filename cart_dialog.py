@@ -576,16 +576,25 @@ class CartDialog(QDialog):
             return
         job_pairs = [(cat, mod) for (cat, _name), mod in jobs]
 
-        # DISABLED 2026-08-20: confirmed live against 31 real mods that the
-        # merged output is unreadable (VPKTool itself can't extract a
-        # single file from it) - VPKMerge likely expects a different input
-        # naming/structure than arbitrary downloaded .vpk blobs get given
-        # here, not yet root-caused. Falls through to the normal per-mod
-        # _BatchInstallWorker path unconditionally until this is fixed and
-        # actually re-verified against real content, not just re-enabled
-        # on faith.
+        # RE-ENABLED 2026-08-20: the "VPKTool не извлёк ни одного файла"
+        # failure against the real 31-mod test was root-caused - it wasn't
+        # VPKMerge's output being broken, it was mod_tools.unpack_vpk()
+        # (the diagnostic used to check it) only ever staging the single
+        # *_dir.vpk file, never the *_NNN.vpk chunk sibling VPKMerge's
+        # output actually needs alongside it. Confirmed by reproducing the
+        # exact failure against a real 2-file merge output, then fixing
+        # unpack_vpk() to stage siblings and watching the same file extract
+        # cleanly (see mod_tools.py's _sibling_chunk_files). VPKMerge itself
+        # writes VPK version 1 (every real downloaded mod is version 2) -
+        # checked this isn't a problem either: Source 2's own official VPK
+        # reader (SteamDatabase/ValveResourceFormat, ValvePak/Package.Read.cs)
+        # handles version 1 as a first-class format, not a legacy/rejected
+        # one. Still never independently confirmed against an actual live
+        # Dota launch (no Dota session available here) - if merged mods
+        # still don't show up in-game after all this, that's the next real
+        # unknown, not a repeat of either bug above.
         use_merge = False
-        if False and len(job_pairs) >= MERGE_SUGGEST_THRESHOLD:
+        if len(job_pairs) >= MERGE_SUGGEST_THRESHOLD:
             choice = QMessageBox.question(
                 self, "Объединить в один файл?",
                 f"В корзине {len(job_pairs)} модов - каждый обычно занимает свой pak-слот "

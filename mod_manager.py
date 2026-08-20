@@ -129,22 +129,48 @@ def dota_found():
     return os.path.isdir(DOTA_GAME_DIR)
 
 
+# In-memory cache for _load_manifest() - profiling a real "open the Heroes
+# tab" (508 cards, each calling is_installed() once) showed 508 separate
+# disk reads + JSON parses of the SAME file, ~0.13s on their own. Kept in
+# sync on every _save_manifest() (the primary invalidation path - no window
+# where a write from this process isn't immediately reflected), with an
+# mtime check as a fallback for changes from outside this process.
+_manifest_cache = None
+_manifest_cache_mtime = None
+
+
 def _load_manifest():
-    if not os.path.exists(_MANIFEST_PATH):
-        return {}
+    global _manifest_cache, _manifest_cache_mtime
     try:
-        with open(_MANIFEST_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
+        mtime = os.path.getmtime(_MANIFEST_PATH)
+    except OSError:
+        _manifest_cache = None
+        _manifest_cache_mtime = None
         return {}
+    if _manifest_cache is None or mtime != _manifest_cache_mtime:
+        try:
+            with open(_MANIFEST_PATH, "r", encoding="utf-8") as f:
+                _manifest_cache = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            _manifest_cache = {}
+        _manifest_cache_mtime = mtime
+    # A copy, not the cached dict itself - several callers mutate what they
+    # get back before calling _save_manifest(); handing out the live cache
+    # object would let an in-progress (not-yet-saved, maybe never saved if
+    # something raises first) edit leak into every other reader in the
+    # meantime.
+    return dict(_manifest_cache)
 
 
 def _save_manifest(manifest):
+    global _manifest_cache, _manifest_cache_mtime
     tmp_path = f"{_MANIFEST_PATH}.tmp{os.getpid()}"
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2, ensure_ascii=False)
         os.replace(tmp_path, _MANIFEST_PATH)
+        _manifest_cache = dict(manifest)
+        _manifest_cache_mtime = os.path.getmtime(_MANIFEST_PATH)
     except OSError:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)

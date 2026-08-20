@@ -71,11 +71,12 @@ QCheckBox::indicator:disabled {
 }
 """
 
-# Categories run from ~30 up to 464 mods (heroes) - rendering every card at
-# once would mean hundreds of concurrent thumbnail downloads and a very
-# tall scroll area. Capped, with the true count always shown below the
-# grid so a truncated category still reads as "search to narrow", not as
-# "this is everything".
+# Individual categories run from ~30 up to 508 mods (heroes) - every one is
+# now shown there (no cap), but preview thumbnails still download one-at-a-
+# time-ish rather than all 508 at once: see _CategoryPage._PREVIEW_CONCURRENCY.
+# The flat cross-category "Все моды" view is a different story (1226+ mods
+# total, growing with every category) - THAT one still pages at this cap,
+# see _CategoryPage._capped / show_all_mods().
 MODS_PER_PAGE = 60
 # The MINIMUM a card is allowed to shrink to when deciding how many columns
 # fit - actual on-screen card width is then stretched up from here to fill
@@ -105,6 +106,10 @@ _CATEGORY_GROUPS = {
 _GROUP_ORDER = ["ГЕРОИ", "МИР", "ЭФФЕКТЫ", "АУДИО", "ПРОЧЕЕ"]
 _FALLBACK_GROUP = "ПРОЧЕЕ"
 
+# Sentinel sidebar id for the flat cross-category "все моды" view - distinct
+# from None, which already means "landing page" (see _on_sidebar_row_changed).
+_ALL_MODS_ID = "__all_mods__"
+
 TILE_WIDTH = 200
 TILE_HEIGHT = 120
 TILE_COLUMNS = 4
@@ -129,13 +134,17 @@ LANGUAGE_FIELD_STYLE_WARN = (
 
 
 class _ModCard(QFrame):
-    def __init__(self, category_id, mod, checked, on_toggle, width=CARD_WIDTH):
+    def __init__(
+        self, category_id, mod, checked, on_toggle, width=CARD_WIDTH, category_label=None,
+        defer_preview=False, on_preview_done=None,
+    ):
         super().__init__()
         self._category_id = category_id
         self._mod = mod
         self._on_toggle = on_toggle
         self._preview_worker = None
         self._action_worker = None
+        self._on_preview_done = on_preview_done
         self._original_pixmap = None  # full-res, kept around so re-stretching (set_width) never re-blurs a scale-of-a-scale
 
         self.setObjectName("modCard")
@@ -174,6 +183,17 @@ class _ModCard(QFrame):
         top_row.addWidget(name, 1)
         layout.addLayout(top_row)
 
+        # Only set in the flat "все моды" cross-category view (see
+        # _CategoryPage.show_all_mods) - a bare mod name alone would be
+        # ambiguous there (nothing else on the card says which category
+        # it's from), unlike the normal per-category grid.
+        if category_label:
+            cat_hint = QLabel(category_label)
+            cat_hint.setStyleSheet(
+                "color: #888888; font-family: 'Inter'; font-size: 9px; background: transparent;"
+            )
+            layout.addWidget(cat_hint)
+
         if self._exclusive:
             exclusive_hint = QLabel("⚡ заменяет текущий")
             exclusive_hint.setStyleSheet(
@@ -202,7 +222,11 @@ class _ModCard(QFrame):
         layout.addWidget(self._status_label)
 
         self._refresh_button_state()
-        self._load_preview()
+        # Deferred by _CategoryPage for large grids (see there) - it calls
+        # _load_preview() itself once a download slot is free, instead of
+        # every card firing its own network request the instant it's built.
+        if not defer_preview:
+            self._load_preview()
 
     def _refresh_button_state(self):
         installed = mod_manager.is_installed(self._category_id, self._mod["name"])
@@ -234,6 +258,11 @@ class _ModCard(QFrame):
     def _load_preview(self):
         preview = self._mod.get("preview")
         if not preview:
+            # Nothing to fetch, but a caller doing queued/throttled loading
+            # (_CategoryPage) is still waiting to hear this slot freed up -
+            # skipping the callback here would leak that slot forever.
+            if self._on_preview_done:
+                self._on_preview_done()
             return
         self._preview_worker = _Worker(
             lambda: mod_catalog.get_preview_path(self._category_id, preview)
@@ -242,13 +271,17 @@ class _ModCard(QFrame):
         self._preview_worker.start()
 
     def _on_preview_loaded(self, path):
-        if not isinstance(path, str) or not os.path.exists(path):
-            return
-        pixmap = QPixmap(path)
-        if pixmap.isNull():
-            return
-        self._original_pixmap = pixmap
-        self._apply_preview_scale()
+        try:
+            if not isinstance(path, str) or not os.path.exists(path):
+                return
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                return
+            self._original_pixmap = pixmap
+            self._apply_preview_scale()
+        finally:
+            if self._on_preview_done:
+                self._on_preview_done()
 
     def _apply_preview_scale(self):
         if self._original_pixmap is None:
@@ -507,15 +540,35 @@ class _CategoryPage(QWidget):
     """One category's own browsable mod grid - search, multi-select
     checkboxes, batch install. Everything below the sidebar/landing page
     that used to be _ModsPage's own body before the redesign."""
+
+    # Every card is now built (no page cap - see mods_page.py's module
+    # comment), but starting all their preview downloads at once would mean
+    # hundreds of simultaneous network requests for a category like Heroes
+    # (508 mods). Cards are built with defer_preview=True and queued here
+    # instead; only this many load concurrently, next one dispatched as each
+    # finishes (_on_preview_slot_freed) - same total work, spread out.
+    _PREVIEW_CONCURRENCY = 8
+
     def __init__(self, get_selected, on_toggle):
         super().__init__()
         self._get_selected = get_selected
         self._on_toggle = on_toggle
         self._current_category = None
-        self._all_mods = []
+        # (category_id, mod, category_label_or_None) tuples - category_label
+        # is only non-None in the flat cross-category view (show_all_mods),
+        # where a bare mod name alone wouldn't say which category it's from.
+        self._all_pairs = []
+        # Only True for the flat "Все моды" view (show_all_mods) - a single
+        # category tops out at 508 (heroes), fine to show in full, but the
+        # cross-category list is 1226+ and growing, so it keeps the old
+        # MODS_PER_PAGE cap. See _rebuild_grid.
+        self._capped = False
         self._grid_columns = GRID_COLUMNS
         self._card_width = CARD_WIDTH
         self._cards = []
+        self._preview_queue = []
+        self._active_previews = 0
+        self._build_generation = 0
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
         self._resize_timer.timeout.connect(self._on_resize_settled)
@@ -563,6 +616,7 @@ class _CategoryPage(QWidget):
 
     def show_category(self, category):
         self._current_category = category["id"]
+        self._capped = False
         self._title.setTextFormat(Qt.TextFormat.PlainText)
         emoji = category_icons.get_emoji(category["id"], category["emoji"])
         self._title.setText(f"{emoji}  {category['name']}")
@@ -572,7 +626,23 @@ class _CategoryPage(QWidget):
             worker.done.connect(lambda path: self._on_title_icon_loaded(cid, name, path))
             worker.start()
             self._title_icon_worker = worker
-        self._all_mods = mod_catalog.get_mods(category["id"])
+        self._all_pairs = [(category["id"], m, None) for m in mod_catalog.get_mods(category["id"])]
+        self._search.blockSignals(True)
+        self._search.clear()
+        self._search.blockSignals(False)
+        self._grid_columns, self._card_width = self._compute_columns_and_width()
+        self._rebuild_grid()
+
+    def show_all_mods(self, pairs):
+        """Flat cross-category view (see _ModsPage._select_all_mods) - pairs
+        is [(category_id, mod, category_label), ...] already built by the
+        caller (who owns the category list/names), so this stays a pure
+        renderer with no catalog access of its own."""
+        self._current_category = None
+        self._capped = True
+        self._title.setTextFormat(Qt.TextFormat.PlainText)
+        self._title.setText(f"📦  Все моды")
+        self._all_pairs = pairs
         self._search.blockSignals(True)
         self._search.clear()
         self._search.blockSignals(False)
@@ -640,7 +710,19 @@ class _CategoryPage(QWidget):
         """Full rebuild: destroys and recreates every card. Only for when
         the actual mod list changed (new category, new search text) - a
         pure re-layout (window resize) must go through _relayout_grid()
-        instead, see the comment there for why."""
+        instead, see the comment there for why.
+
+        Card construction itself is chunked across event-loop ticks (see
+        _build_cards_batch) rather than done in one synchronous loop - a
+        category like Heroes (508 mods) building all its cards in a single
+        call was a real, measured ~1.5-2s main-thread block (profiled:
+        QGridLayout.addWidget + per-widget setStyleSheet + the first
+        layout/paint pass all scale with widget count), which is exactly
+        what reads as "the app froze" when switching tabs. Spreading it
+        over ~40-card batches keeps every gap short enough that Qt keeps
+        pumping paint/input events in between, so the grid visibly fills in
+        instead of the whole window locking up - same total work, just
+        never blocking long enough to feel stuck."""
         while self._grid.count():
             item = self._grid.takeAt(0)
             widget = item.widget()
@@ -648,34 +730,74 @@ class _CategoryPage(QWidget):
                 widget.hide()
                 widget.deleteLater()
         self._cards = []
+        # A rebuild (new category/search) invalidates whatever was still
+        # queued/in-flight from the previous grid - dropping the reference
+        # here is enough, in-flight _Worker threads finish and emit into
+        # thin air (their card is already gone), nothing to cancel by hand.
+        self._preview_queue = []
+        self._active_previews = 0
+        # Bumped so any still-pending _build_cards_batch continuation from a
+        # PREVIOUS rebuild (search text changed again before the last one
+        # finished building) recognizes itself as stale and stops - without
+        # this, two chunked builds interleaving into the same grid would
+        # duplicate/misplace cards.
+        self._build_generation += 1
 
         query = self._search.text().strip().lower()
         filtered = (
-            [m for m in self._all_mods if query in m["name"].lower()]
-            if query else self._all_mods
+            [p for p in self._all_pairs if query in p[1]["name"].lower()]
+            if query else self._all_pairs
         )
-
-        selected = self._get_selected()
-        shown = filtered[:MODS_PER_PAGE]
-        for i, mod in enumerate(shown):
-            key = (self._current_category, mod["name"])
-            card = _ModCard(
-                self._current_category, mod,
-                checked=key in selected,
-                on_toggle=self._on_toggle,
-                width=self._card_width,
-            )
-            self._cards.append(card)
-            self._grid.addWidget(card, i // self._grid_columns, i % self._grid_columns)
 
         if not filtered:
             self._status_label.setText("Ничего не найдено")
-        elif len(filtered) > MODS_PER_PAGE:
+        elif self._capped and len(filtered) > MODS_PER_PAGE:
             self._status_label.setText(
                 f"Показаны первые {MODS_PER_PAGE} из {len(filtered)} — уточни поиск"
             )
         else:
             self._status_label.setText(f"{len(filtered)} модов")
+
+        selected = self._get_selected()
+        shown = filtered[:MODS_PER_PAGE] if self._capped else filtered
+        self._build_cards_batch(shown, selected, 0, self._build_generation)
+
+    _BUILD_BATCH_SIZE = 40
+
+    def _build_cards_batch(self, shown, selected, start_index, generation):
+        if generation != self._build_generation:
+            return  # superseded by a newer rebuild - see _rebuild_grid
+        end_index = min(start_index + self._BUILD_BATCH_SIZE, len(shown))
+        for i in range(start_index, end_index):
+            category_id, mod, category_label = shown[i]
+            key = (category_id, mod["name"])
+            card = _ModCard(
+                category_id, mod,
+                checked=key in selected,
+                on_toggle=self._on_toggle,
+                width=self._card_width,
+                category_label=category_label,
+                defer_preview=True,
+                on_preview_done=self._on_preview_slot_freed,
+            )
+            self._cards.append(card)
+            self._grid.addWidget(card, i // self._grid_columns, i % self._grid_columns)
+            self._preview_queue.append(card)
+        self._fill_preview_slots()
+        if end_index < len(shown):
+            QTimer.singleShot(
+                0, lambda: self._build_cards_batch(shown, selected, end_index, generation)
+            )
+
+    def _fill_preview_slots(self):
+        while self._preview_queue and self._active_previews < self._PREVIEW_CONCURRENCY:
+            card = self._preview_queue.pop(0)
+            self._active_previews += 1
+            card._load_preview()
+
+    def _on_preview_slot_freed(self):
+        self._active_previews -= 1
+        self._fill_preview_slots()
 
 
 def _apply_icon_pixmap(label, path, category_id=None):
@@ -760,6 +882,11 @@ class _ModsPage(QWidget):
         self._selected = {}
         self._categories = mod_catalog.get_categories()
         self._counts = {c["id"]: len(mod_catalog.get_mods(c["id"])) for c in self._categories}
+        # Built lazily on first "Все моды" click, not here - get_mods() is
+        # already called above for every category (for the sidebar counts),
+        # so the data itself is free; caching just avoids re-flattening +
+        # re-sorting thousands of entries on every subsequent visit.
+        self._all_mods_pairs_cache = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -882,6 +1009,10 @@ class _ModsPage(QWidget):
             _sidebar_row_widget("🗂 Все категории", sum(self._counts.values()), bold=True),
             category_id=None,
         )
+        self._add_sidebar_item(
+            _sidebar_row_widget("📦 Все моды", sum(self._counts.values()), bold=True),
+            category_id=_ALL_MODS_ID,
+        )
 
         grouped = {}
         for cat in self._categories:
@@ -910,8 +1041,36 @@ class _ModsPage(QWidget):
         category_id = item.data(Qt.ItemDataRole.UserRole)
         if category_id is None:
             self._stack.setCurrentWidget(self._landing_page)
+        elif category_id == _ALL_MODS_ID:
+            self._select_all_mods()
         else:
             self._select_category(category_id)
+
+    def _get_all_mods_pairs(self):
+        if self._all_mods_pairs_cache is None:
+            names = {c["id"]: c["name"] for c in self._categories}
+            pairs = [
+                (cat["id"], mod, names[cat["id"]])
+                for cat in self._categories
+                for mod in mod_catalog.get_mods(cat["id"])
+            ]
+            # Alphabetical, not grouped by category - a flat list with no
+            # visual category grouping otherwise reads as random order.
+            pairs.sort(key=lambda p: p[1]["name"].lower())
+            self._all_mods_pairs_cache = pairs
+        return self._all_mods_pairs_cache
+
+    def _select_all_mods(self):
+        for row in range(self._category_list.count()):
+            if self._category_list.item(row).data(Qt.ItemDataRole.UserRole) == _ALL_MODS_ID:
+                self._category_list.blockSignals(True)
+                self._category_list.setCurrentRow(row)
+                self._category_list.blockSignals(False)
+                break
+        # Switch to the (about-to-be-populated) page BEFORE building its
+        # cards, not after - see show_category()'s call site below for why.
+        self._stack.setCurrentWidget(self._category_page)
+        self._category_page.show_all_mods(self._get_all_mods_pairs())
 
     def _select_category(self, category_id):
         category = next((c for c in self._categories if c["id"] == category_id), None)
@@ -926,8 +1085,15 @@ class _ModsPage(QWidget):
                 self._category_list.setCurrentRow(row)
                 self._category_list.blockSignals(False)
                 break
-        self._category_page.show_category(category)
+        # Switching to this page first (before it has any cards) means the
+        # chunked build in _rebuild_grid runs on the ALREADY-VISIBLE widget,
+        # so each batch's layout/paint cost lands while the tab is on
+        # screen - the grid visibly fills in row by row. Building 508
+        # hidden cards and only THEN switching (the old order) meant the
+        # first-ever layout/paint of that whole tree happened in one go at
+        # switch time - measured ~0.5s on its own, on top of the build.
         self._stack.setCurrentWidget(self._category_page)
+        self._category_page.show_category(category)
 
     def _refresh_footer(self):
         found = mod_manager.dota_found()
