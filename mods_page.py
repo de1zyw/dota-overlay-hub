@@ -206,11 +206,17 @@ class _ModCard(QFrame):
 
     def _refresh_button_state(self):
         installed = mod_manager.is_installed(self._category_id, self._mod["name"])
-        # Direct one-off install removed - the cart's batch flow is the only
-        # install path now (it's had real bugs surface less there, and one
-        # install path is simpler than two doing almost the same thing).
-        # Uninstall isn't something the cart does at all, so that half of
-        # this button stays.
+        # Direct one-off install was removed in favor of the cart - EXCEPT
+        # for exclusive categories (cursors/fonts/maps, see self._exclusive
+        # above), which never had a checkbox and so never had any way into
+        # the cart at all. Removing this button for them made those
+        # categories entirely uninstallable - confirmed, a real regression,
+        # not a hypothetical one - so they keep direct install.
+        if self._exclusive:
+            self._action_btn.setVisible(True)
+            self._action_btn.setText("Удалить" if installed else "Установить")
+            self._action_btn.setStyleSheet(SECONDARY_BUTTON_STYLE if installed else PRIMARY_BUTTON_STYLE)
+            return
         self._action_btn.setVisible(installed)
         self._action_btn.setText("Удалить")
         self._action_btn.setStyleSheet(SECONDARY_BUTTON_STYLE)
@@ -267,13 +273,19 @@ class _ModCard(QFrame):
 
     def _on_action_clicked(self):
         animate_button_press(self._action_btn)
-        # Uninstall-only now - see _refresh_button_state, this button is
-        # hidden whenever the mod isn't installed, so there's nothing else
-        # this click could mean.
         self._action_btn.setEnabled(False)
         loose = mod_manager.is_loose_file_category(self._category_id)
-        uninstaller = mod_manager.uninstall_loose_mod if loose else mod_manager.uninstall_mod
-        fn = lambda: uninstaller(self._category_id, self._mod["name"])
+        installed = mod_manager.is_installed(self._category_id, self._mod["name"])
+        # Exclusive categories (cursors/fonts/maps) still install directly
+        # from here - see _refresh_button_state. Every other category is
+        # uninstall-only from this button (not installed -> hidden, so
+        # nothing else this click could mean there).
+        if self._exclusive and not installed:
+            installer = mod_manager.install_loose_mod if loose else mod_manager.install_mod
+            fn = lambda: installer(self._category_id, self._mod)
+        else:
+            uninstaller = mod_manager.uninstall_loose_mod if loose else mod_manager.uninstall_mod
+            fn = lambda: uninstaller(self._category_id, self._mod["name"])
         self._action_worker = _Worker(fn)
         self._action_worker.done.connect(self._on_action_done)
         self._action_worker.start()
