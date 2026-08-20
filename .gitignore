@@ -10,3 +10,9 @@ logs/
 steam_account_override.txt
 steam_library_override.txt
 build_version.txt
+hotkey_settings.json
+discord_presence_settings.json
+overlay_position_settings.json
+mod_language_settings.json
+profile_lookup_history.json
+mod_presets.json
