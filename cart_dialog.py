@@ -576,8 +576,16 @@ class CartDialog(QDialog):
             return
         job_pairs = [(cat, mod) for (cat, _name), mod in jobs]
 
+        # DISABLED 2026-08-20: confirmed live against 31 real mods that the
+        # merged output is unreadable (VPKTool itself can't extract a
+        # single file from it) - VPKMerge likely expects a different input
+        # naming/structure than arbitrary downloaded .vpk blobs get given
+        # here, not yet root-caused. Falls through to the normal per-mod
+        # _BatchInstallWorker path unconditionally until this is fixed and
+        # actually re-verified against real content, not just re-enabled
+        # on faith.
         use_merge = False
-        if len(job_pairs) >= MERGE_SUGGEST_THRESHOLD:
+        if False and len(job_pairs) >= MERGE_SUGGEST_THRESHOLD:
             choice = QMessageBox.question(
                 self, "Объединить в один файл?",
                 f"В корзине {len(job_pairs)} модов - каждый обычно занимает свой pak-слот "
